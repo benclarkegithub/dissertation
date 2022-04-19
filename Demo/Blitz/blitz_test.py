@@ -5,7 +5,6 @@ import torchvision
 import torchvision.transforms as transforms
 
 import blitz
-import blitz_helper
 
 batch_size = 16
 

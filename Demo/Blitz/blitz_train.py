@@ -59,4 +59,4 @@ for epoch in range(10):
             running_loss = 0
 
 print("Finished training")
-torch.save(net.state_dict(), "./MNIST_net.pth")
+torch.save(net.state_dict(), "MNIST_net.pth")
