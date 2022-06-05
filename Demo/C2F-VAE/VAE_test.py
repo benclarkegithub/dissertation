@@ -27,19 +27,19 @@ for VAE_i in range(NUM_VAES):
     VAEs.append(VAE.VAE())
     VAEs[VAE_i].load_state_dict(torch.load(f"./VAE_{VAE_i}.pth"))
 
-    _, _, _, all_images = VAE_helper.VAEs_output(VAEs[:VAE_i], images)
+    _, _, _, all_logits = VAE_helper.VAEs_output_logits(VAEs[:VAE_i], images)
 
-    # Pass the last set of images (corresponding to the (i - 1)th VAE) through the decoder
-    mu, _ = VAEs[VAE_i].encoder(all_images[-1])
+    # Pass the last set of logits (corresponding to the (i - 1)th VAE) through the decoder
+    mu, _ = VAEs[VAE_i].encoder(all_logits[-1])
     logits = VAEs[VAE_i].decoder(mu)
 
     # Preview produced images
     output_images = VAE_helper.logits_to_images(logits, images.shape)
-    target_and_output = torch.cat([all_images[-1], output_images], dim=0)
+    target_and_output = torch.cat([torch.sigmoid(all_logits[-1]), output_images], dim=0)
     output_images_grid = torchvision.utils.make_grid(target_and_output)
     VAE_helper.show_image(output_images_grid, f"Target vs. output (VAE {VAE_i})")
 
-logits, _, _, _ = VAE_helper.VAEs_output(VAEs, images)
+logits, _, _, _ = VAE_helper.VAEs_output_logits(VAEs, images)
 output_images = VAE_helper.logits_to_images(logits, images.shape)
 output_images_grid = torchvision.utils.make_grid(output_images)
 VAE_helper.show_image(output_images_grid, f"All VAEs")

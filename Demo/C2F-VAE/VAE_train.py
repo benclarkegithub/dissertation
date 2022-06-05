@@ -91,13 +91,13 @@ for VAE_i in range(NUM_VAES):
             # Get the inputs
             images, _ = data
             # Transform the images to appropriate input
-            _, _, _, all_images = VAE_helper.VAEs_output(VAEs[:VAE_i], images)
+            _, _, _, all_logits = VAE_helper.VAEs_output_logits(VAEs[:VAE_i], images)
             # Zero the parameter's gradients
             optimiser.zero_grad()
             # Forward, backward, loss, step
-            logits, mu, logvar = VAEs[VAE_i](all_images[-1])
+            logits, mu, logvar = VAEs[VAE_i](all_logits[-1])
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
-            loss = -ELBO(logits, all_images[-1].view(-1, 28 * 28), mu, logvar)
+            loss = -ELBO(logits, torch.sigmoid(all_logits[-1].view(-1, 28 * 28)), mu, logvar)
             loss.backward()
             optimiser.step()
             # Keep track of loss
@@ -109,7 +109,7 @@ for VAE_i in range(NUM_VAES):
             # Get the inputs
             images, _ = data
             # Get the outputs of all the VAEs combined (including the one we're training)
-            logits, mu, logvar, _ = VAE_helper.VAEs_output(VAEs, images)
+            logits, mu, logvar, _ = VAE_helper.VAEs_output_logits(VAEs, images)
             # Calculate loss
             val_loss += -ELBO(logits, images.view(-1, 28 * 28), mu, logvar).item()
 

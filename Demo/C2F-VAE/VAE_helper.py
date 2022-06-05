@@ -18,15 +18,15 @@ def VAEs_output(VAEs, images):
 
     for VAE_i, VAE in enumerate(VAEs):
         with torch.no_grad():
-            VAE_i_logits, VAE_i_mu, VAE_i_logvar = VAE(all_images[-1])
-            logits += VAE_i_logits
+            VAE_logits, VAE_mu, VAE_logvar = VAE(all_images[-1])
+            logits += VAE_logits
             if VAE_i == 0:
-                mu = VAE_i_mu
-                logvar = VAE_i_logvar
+                mu = VAE_mu
+                logvar = VAE_logvar
             else:
-                mu = torch.hstack([mu, VAE_i_mu])
-                logvar = torch.hstack([logvar, VAE_i_logvar])
-            transformed_images = transform_images(all_images[-1], VAE_i_logits)
+                mu = torch.hstack([mu, VAE_mu])
+                logvar = torch.hstack([logvar, VAE_logvar])
+            transformed_images = transform_images(all_images[-1], VAE_logits)
             all_images = torch.cat([all_images, transformed_images.unsqueeze(dim=0)], dim=0)
 
     return logits, mu, logvar, all_images
@@ -52,3 +52,35 @@ def clip_images(images):
     images = torch.where(images > 1 - torch.tensor(1e-6), 1 - torch.tensor(1e-6), images)
 
     return images
+
+
+def VAEs_output_logits(VAEs, images):
+    logits = torch.zeros_like(images.view(-1, 28 * 28), requires_grad=False)
+    mu = None
+    logvar = None
+
+    all_images = torch.clone(images).unsqueeze(dim=0) # (1 + len(VAEs), BATCH_SIZE, 1, 28, 28)
+    all_logits = clip_logits(torch.logit(all_images), 10.0) # (1 + len(VAEs), BATCH_SIZE, 1, 28, 28)
+
+    for VAE_i, VAE in enumerate(VAEs):
+        with torch.no_grad():
+            VAE_logits, VAE_mu, VAE_logvar = VAE(all_logits[-1])
+            logits += VAE_logits
+            if VAE_i == 0:
+                mu = VAE_mu
+                logvar = VAE_logvar
+            else:
+                mu = torch.hstack([mu, VAE_mu])
+                logvar = torch.hstack([logvar, VAE_logvar])
+            transformed_logits = all_logits[-1] - VAE_logits.reshape(images.shape)
+            all_logits = torch.cat([all_logits, transformed_logits.unsqueeze(dim=0)], dim=0)
+
+    return logits, mu, logvar, all_logits
+
+
+def clip_logits(logits, range):
+    # Hack, clip the values for training, not a perfect solution...
+    logits = torch.where(logits < torch.tensor(-range), torch.tensor(-range), logits)
+    logits = torch.where(logits > torch.tensor(range), torch.tensor(range), logits)
+
+    return logits
