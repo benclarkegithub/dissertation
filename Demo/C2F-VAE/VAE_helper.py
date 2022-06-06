@@ -55,16 +55,20 @@ def clip_images(images):
 
 
 def VAEs_output_logits(VAEs, images):
+    LOGITS_RANGE = 10.0
+
     logits = torch.zeros_like(images.view(-1, 28 * 28), requires_grad=False)
     mu = None
     logvar = None
 
     all_images = torch.clone(images).unsqueeze(dim=0) # (1 + len(VAEs), BATCH_SIZE, 1, 28, 28)
-    all_logits = clip_logits(torch.logit(all_images), 10.0) # (1 + len(VAEs), BATCH_SIZE, 1, 28, 28)
+    all_logits = clip_logits(torch.logit(all_images), LOGITS_RANGE) # (1 + len(VAEs), BATCH_SIZE, 1, 28, 28)
 
     for VAE_i, VAE in enumerate(VAEs):
         with torch.no_grad():
             VAE_logits, VAE_mu, VAE_logvar = VAE(all_logits[-1])
+            # Clip the output logits
+            VAE_logits = clip_logits(VAE_logits, LOGITS_RANGE)
             logits += VAE_logits
             if VAE_i == 0:
                 mu = VAE_mu
