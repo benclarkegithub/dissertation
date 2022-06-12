@@ -3,7 +3,10 @@ import torchvision
 import torchvision.transforms as transforms
 
 import VAE
+import VAE_old
 import VAE_helper
+
+USE_OLD = False
 
 BATCH_SIZE = 16
 
@@ -19,8 +22,15 @@ classes = [str(x) for x in range(10)]
 data_iter = iter(test_loader)
 images, labels = data_iter.next()
 
-net = VAE.VAE()
-net.load_state_dict(torch.load("./VAE.pth"))
+# Neural network
+if not USE_OLD:
+    net = VAE.VAE()
+    path = "./VAE.pth"
+else:
+    net = VAE_old.VAE()
+    path = "./VAE.old.pth"
+
+net.load_state_dict(torch.load(path))
 
 mu, _ = net.encoder(images)
 output = net.decoder(mu)

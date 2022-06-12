@@ -7,8 +7,11 @@ import torchvision.transforms as transforms
 import torch.optim as optim
 
 import VAE
+import VAE_old
 
-EPOCHS = 30
+USE_OLD = False
+
+EPOCHS = 20
 BATCH_SIZE = 128
 TRAIN_UPDATE_FREQ = 100
 
@@ -32,7 +35,12 @@ classes = [str(x) for x in range(10)]
 # print(" ".join(f"{classes[labels[i]]}" for i in range(batch_size)))
 
 # Neural network
-vae = VAE.VAE()
+if not USE_OLD:
+    vae = VAE.VAE()
+    path = "./VAE.pth"
+else:
+    vae = VAE_old.VAE()
+    path = "./VAE.old.pth"
 
 # Optimiser and loss function
 optimiser = optim.Adam(vae.parameters(), lr=0.001)
@@ -49,9 +57,9 @@ def ELBO(probs, x, mu, logvar):
     return (CB_log_prob - KLD).mean()
 
 
-if exists("./VAE.pth"):
+if exists(path):
     print("Loading saved model...")
-    vae.load_state_dict(torch.load("./VAE.pth"))
+    vae.load_state_dict(torch.load(path))
 else:
     print("No saved model exists...")
 
@@ -87,4 +95,4 @@ for epoch in range(EPOCHS):
             running_loss = 0
 
 print("Finished training!")
-torch.save(best_model_parameters, "VAE.pth")
+torch.save(best_model_parameters, path)
