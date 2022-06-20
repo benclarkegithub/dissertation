@@ -29,7 +29,7 @@ class Encoder(nn.Module):
         # 8x14x14 = 1568 -> 16x7x7 = 784
         x = F.leaky_relu(self.conv4(x))
         # 16x7x7 = 784 -> 784
-        x = torch.flatten(x, dims=1)
+        x = torch.flatten(x, start_dim=1)
         # 784 -> 196
         x = F.leaky_relu(self.fc1(x))
         # 196 -> 48
@@ -67,7 +67,7 @@ class LatentsToDecoder(nn.Module):
 
     def forward(self, x):
         # num_latents -> 48
-        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc(x))
 
         return x
 
@@ -102,7 +102,7 @@ class Decoder(nn.Module):
         # 2x28x28 = 1568 -> 1x28x28 = 784
         x = self.deconv4(x)
         # 1x28x28 = 784
-        x = torch.flatten(x, dims=1)
+        x = torch.flatten(x, start_dim=1)
 
         return x
 
