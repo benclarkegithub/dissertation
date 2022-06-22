@@ -139,3 +139,15 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
 
         return mu + (std * eps)
+
+    def x_to_mu_logvar(self, x):
+        x_enc = self.encoder(x)
+        mu, logvar = self.enc_to_lat(x_enc)
+
+        return x_enc, mu, logvar
+
+    def z_to_logits(self, z):
+        z_dec = self.lat_to_dec(z)
+        logits = self.decoder(z_dec)
+
+        return z_dec, logits

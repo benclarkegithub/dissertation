@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
+import torchvision
 
 
 class Evaluate:
@@ -8,10 +10,10 @@ class Evaluate:
         self.experiment = experiment
         self.path = f"{type(method).__name__}_{experiment}"
 
-    def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
         # Try and load the model
         self.method.load(f"{self.path}.pth")
 
+    def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
         avg_train_loss = []
         avg_train_log_prob = []
         avg_train_KLD = []
@@ -84,8 +86,81 @@ class Evaluate:
 
         self.plot_train_val_KLD(avg_train_KLD=avg_train_KLD, avg_val_KLD=avg_val_KLD)
 
-    def test(self):
-        pass
+    def test(self, test_loader, *, avg_var=True, output_images=True, output_images_opt=None):
+        if avg_var:
+            # Calculate mu, var, z mean and variance
+            mu = None
+            logvar = None
+            z = None
+
+            for i, data in enumerate(test_loader):
+                output, loss, log_prob, KLD = self.method.test(i=i, data=data)
+
+                if (i == 0):
+                    mu = output["mu"]
+                    logvar = output["logvar"]
+                    z = output["z"]
+                else:
+                    mu = torch.vstack([mu, output["mu"]])
+                    logvar = torch.vstack([logvar, output["logvar"]])
+                    z = torch.vstack([z, output["z"]])
+
+            var = np.exp(logvar)
+            avg_mu = mu.mean(dim=0)
+            avg_var = var.mean(dim=0)
+            avg_z = z.mean(dim=0)
+            var_mu = mu.var(dim=0)
+            var_var = var.var(dim=0)
+            var_z = z.var(dim=0)
+
+            print(f"Avg. mu: {avg_mu}")
+            print(f"Avg. var: {avg_var}")
+            print(f"Avg. z: {avg_z}")
+            print(f"Var. mu: {var_mu}")
+            print(f"Var. var: {var_var}")
+            print(f"Var. z: {var_z}")
+
+        if output_images:
+            if not output_images_opt:
+                # Set output images options if it doesn't exist
+                output_images_opt = { "range": 2.5, "number": 11, "size": 28 }
+
+            # Get output images options
+            range = output_images_opt["range"]
+            number = output_images_opt["number"]
+            size = output_images_opt["size"]
+            total_number = number ** 2
+            total_size = number * size
+
+            # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
+            X = np.linspace(start=-range, stop=range, num=number, dtype=np.single)
+            Y = np.linspace(start=range, stop=-range, num=number, dtype=np.single)
+            Z = [[x, y] for y in Y for x in X]
+            Z_tensor = torch.tensor(Z)
+
+            # Add additional latent variables if necessary
+            if Z_tensor.shape[1] != self.method.get_num_latents():
+                cols_needed = self.method.get_num_latents() - Z_tensor.shape[1]
+                cols = torch.zeros(total_number, cols_needed)
+                Z_tensor = torch.hstack([Z_tensor, cols])
+
+            # Get output
+            z_dec, logits = self.method.z_to_logits(Z_tensor)
+
+            # Make grid of images
+            images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, 1, size, size)
+            images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+            # Create and display the 2D graph
+            plt.title(f"{type(self.method).__name__} {self.experiment} output images")
+            plt.xlabel("Latent variable 1")
+            plt.ylabel("Latent variable 2")
+            x_ticks = np.linspace(start=0, stop=total_size, num=number) + (size // 2) - 1
+            y_ticks = np.linspace(start=total_size, stop=0, num=number) + (size // 2) - 1
+            plt.xticks(ticks=x_ticks, labels=X)
+            plt.yticks(ticks=y_ticks, labels=X)
+            plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+            plt.show()
 
     def print_epoch_info(self,
                          epoch,

@@ -49,3 +49,11 @@ class Standard(Method):
             self.VAE.load_state_dict(torch.load(path))
         else:
             print(f"No model exists... {path}")
+
+    @torch.no_grad()
+    def x_to_mu_logvar(self, x):
+        return self.VAE.x_to_mu_logvar(x)
+
+    @torch.no_grad()
+    def z_to_logits(self, z):
+        return self.VAE.z_to_logits(z)

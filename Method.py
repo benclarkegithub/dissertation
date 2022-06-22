@@ -23,6 +23,17 @@ class Method(ABC):
     def save(self, path):
         pass
 
+    @abstractmethod
+    def x_to_mu_logvar(self, x):
+        pass
+
+    @abstractmethod
+    def z_to_logits(self, z):
+        pass
+
+    def get_num_latents(self):
+        return self.num_latents
+
     def ELBO(self, logits, x, mu, logvar, *, beta=1):
         CB_log_prob = self.CB_log_prob_fn(logits, x)
         KLD = -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)

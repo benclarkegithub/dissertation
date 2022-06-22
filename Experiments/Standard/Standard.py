@@ -24,3 +24,6 @@ evaluate.train(
     val_loader=mnist.get_val_loader(),
     max_epochs=MAX_EPOCHS,
     max_no_improvement=MAX_NO_IMPROVEMENT)
+
+# Test model
+evaluate.test(test_loader=mnist.get_test_loader())
