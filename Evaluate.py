@@ -1,5 +1,6 @@
 from os import mkdir
 from os.path import exists, isdir
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -24,6 +25,7 @@ class Evaluate:
         avg_val_KLD = []
         best_avg_val_epoch = 1
         best_avg_val_loss = np.inf
+        epoch_time = []
 
         for epoch in range(1, max_epochs+1):
             # Train the model and get the average training loss
@@ -31,11 +33,17 @@ class Evaluate:
             avg_train_log_prob_2 = []
             avg_train_KLD_2 = []
 
+            # Keep track of the training time
+            start = time.time()
+
             for i, data in enumerate(train_loader):
                 loss, log_prob, KLD = self.method.train(i=i, data=data)
                 avg_train_loss_2.append(loss)
                 avg_train_log_prob_2.append(log_prob)
                 avg_train_KLD_2.append(KLD)
+
+            end = time.time()
+            epoch_time.append(end - start)
 
             avg_train_loss.append(np.array(avg_train_loss_2).mean())
             avg_train_log_prob.append(np.array(avg_train_log_prob_2).mean())
@@ -59,6 +67,7 @@ class Evaluate:
             # Print epoch information
             self.print_epoch_info(
                 epoch=epoch,
+                epoch_time=epoch_time[-1],
                 avg_train_ELBO=-avg_train_loss[-1],
                 avg_val_ELBO=-avg_val_loss[-1],
                 avg_train_log_prob=avg_train_log_prob[-1],
@@ -186,6 +195,7 @@ class Evaluate:
 
     def print_epoch_info(self,
                          epoch,
+                         epoch_time,
                          avg_train_ELBO,
                          avg_val_ELBO,
                          *,
@@ -193,13 +203,10 @@ class Evaluate:
                          avg_val_log_prob,
                          avg_train_KLD,
                          avg_val_KLD):
-        print(f"[Epoch {epoch:3}]\t"
-              f"Avg. train ELBO: {avg_train_ELBO:.3f}\t"
-              f"Avg. val. ELBO: {avg_val_ELBO:.3f}\t"
-              f"Avg. train log prob: {avg_train_log_prob:.3f}\t"
-              f"Avg. val. log prob: {avg_val_log_prob:.3f}\t"
-              f"Avg. train KLD: {avg_train_KLD:.3f}\t"
-              f"Avg. val. KLD: {avg_val_KLD:.3f}\t")
+        print(f"[Epoch {epoch:3}] ({epoch_time:.2f}s)\t"
+              f"ELBO: {avg_train_ELBO:.3f} ({avg_val_ELBO:.3f})\t"
+              f"Log prob: {avg_train_log_prob:.3f} ({avg_val_log_prob:.3f})\t"
+              f"KLD: {avg_train_KLD:.3f} ({avg_val_KLD:.3f})\t")
 
     def plot_train_val_ELBO(self,
             avg_train_ELBO,
