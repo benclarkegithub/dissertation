@@ -1,3 +1,5 @@
+from os import mkdir
+from os.path import exists, isdir
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -8,10 +10,10 @@ class Evaluate:
     def __init__(self, method, experiment):
         self.method = method
         self.experiment = experiment
-        self.path = f"{type(method).__name__}_{experiment}"
+        self.path = f"{experiment}/{type(method).__name__}_{experiment}"
 
         # Try and load the model
-        self.method.load(f"{self.path}.pth")
+        self.load(verbose=True)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
         avg_train_loss = []
@@ -69,7 +71,7 @@ class Evaluate:
                 best_avg_val_epoch = epoch
                 best_avg_val_loss = avg_val_loss[-1]
                 # Save the model
-                self.method.save(f"{self.path}.pth")
+                self.save()
             elif (epoch - best_avg_val_epoch + 1) == max_no_improvement:
                 print(f"No improvement after {max_no_improvement} epochs...")
                 break
@@ -161,6 +163,26 @@ class Evaluate:
             plt.yticks(ticks=y_ticks, labels=X)
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
             plt.show()
+
+    def save(self, verbose=False):
+        if verbose:
+            print(f"Saving model... {self.path}")
+        # Get the directory name and if it doesn't exist create it
+        path_split = self.path.split("/")
+        if not isdir(path_split[0]):
+            mkdir(path_split[0])
+        # Save
+        self.method.save(self.path)
+
+    def load(self, verbose=False):
+        # Check that the path exists and load the model if it does
+        if exists(self.path):
+            if verbose:
+                print(f"Loading model... {self.path}")
+            self.method.load(self.path)
+        else:
+            if verbose:
+                print(f"No model exists... {self.path}")
 
     def print_epoch_info(self,
                          epoch,

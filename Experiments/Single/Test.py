@@ -1,17 +1,18 @@
 from Datasets import MNIST
 from Evaluate import Evaluate as Eval
-from Methods.Standard import Standard
+from Methods.Single import Single
 
 
 BATCH_SIZE = 128
 TRAIN_SET_SIZE = 57000
 VAL_SET_SIZE = 3000
 
-mnist = MNIST(batch_size=BATCH_SIZE, train_set_size=TRAIN_SET_SIZE, val_set_size=VAL_SET_SIZE)
+mnist = MNIST(root="../../Data" , batch_size=BATCH_SIZE, train_set_size=TRAIN_SET_SIZE, val_set_size=VAL_SET_SIZE)
 
 NUM_LATENTS = 2
+NUM_LATENTS_GROUP = 1
 
-method = Standard(num_latents=NUM_LATENTS)
+method = Single(num_latents=NUM_LATENTS, num_latents_group=NUM_LATENTS_GROUP)
 
 MAX_EPOCHS = 100
 MAX_NO_IMPROVEMENT = 10

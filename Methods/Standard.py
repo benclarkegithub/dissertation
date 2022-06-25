@@ -1,4 +1,3 @@
-from os.path import exists
 import torch
 import torch.optim as optim
 
@@ -40,15 +39,10 @@ class Standard(Method):
         return output, -loss.item(), log_prob.item(), KLD.item()
 
     def save(self, path):
-        print(f"Saving model... {path}")
-        torch.save(self.VAE.state_dict(), path)
+        torch.save(self.VAE.state_dict(), f"{path}.pth")
 
     def load(self, path):
-        if exists(path):
-            print(f"Loading model... {path}")
-            self.VAE.load_state_dict(torch.load(path))
-        else:
-            print(f"No model exists... {path}")
+        self.VAE.load_state_dict(torch.load(f"{path}.pth"))
 
     @torch.no_grad()
     def x_to_mu_logvar(self, x):

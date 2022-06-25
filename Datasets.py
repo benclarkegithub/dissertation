@@ -6,7 +6,8 @@ import torchvision.transforms as transforms
 
 
 class Dataset(ABC):
-    def __init__(self, batch_size, train_set_size, val_set_size):
+    def __init__(self, root, batch_size, train_set_size, val_set_size):
+        self.root = root
         self.batch_size = batch_size
         self.train_set_size = train_set_size
         self.val_set_size = val_set_size
@@ -33,14 +34,14 @@ class Dataset(ABC):
 
 
 class MNIST(Dataset):
-    def __init__(self, batch_size, train_set_size, val_set_size):
-        super().__init__(batch_size, train_set_size, val_set_size)
+    def __init__(self, root, batch_size, train_set_size, val_set_size):
+        super().__init__(root, batch_size, train_set_size, val_set_size)
 
         # Get datasets
         train_dataset = torchvision.datasets.MNIST(
-            root="./Data", train=True, download=True, transform=self.transform)
+            root=self.root, train=True, download=True, transform=self.transform)
         test_dataset = torchvision.datasets.MNIST(
-            root="./Data", train=False, download=True, transform=self.transform)
+            root=self.root, train=False, download=True, transform=self.transform)
 
         # Split train and validation sets
         train_set, val_set = torch.utils.data.random_split(
