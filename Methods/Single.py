@@ -1,6 +1,6 @@
-from os.path import exists
 import torch
 import torch.optim as optim
+from torchinfo import summary
 
 from VAE import Encoder, EncoderToLatents, LatentsToDecoder, Decoder
 from Method import Method
@@ -126,7 +126,7 @@ class Single(Method):
         return output, -loss.item(), log_prob.item(), KLD.item()
 
     def save(self, path):
-        torch.save(self.encoder.state_dict(), f"{path}_enc.pth")
+        torch.save(self.encoder.state_dict(), f"{path}.pth")
         for i, x in enumerate(self.enc_to_lats):
             torch.save(x.state_dict(), f"{path}_enc_to_lat_{i}.pth")
         for i, x in enumerate(self.lats_to_dec):
@@ -134,12 +134,27 @@ class Single(Method):
         torch.save(self.decoder.state_dict(), f"{path}_dec.pth")
 
     def load(self, path):
-        self.encoder.load_state_dict(torch.load(f"{path}_enc.pth"))
+        self.encoder.load_state_dict(torch.load(f"{path}.pth"))
         for i, x in enumerate(self.enc_to_lats):
             x.load_state_dict(torch.load(f"{path}_enc_to_lat_{i}.pth"))
         for i, x in enumerate(self.lats_to_dec):
             x.load_state_dict(torch.load(f"{path}_lat_to_dec_{i}.pth"))
         self.decoder.load_state_dict(torch.load(f"{path}_dec.pth"))
+
+    def summary(self):
+        summaries = []
+        summaries.append("Encoder")
+        summaries.append(str(summary(self.encoder)))
+        for i, x in enumerate(self.enc_to_lats):
+            summaries.append(f"Encoder to Latents {i}")
+            summaries.append(str(summary(x)))
+        for i, x in enumerate(self.lats_to_dec):
+            summaries.append(f"Latents to Decoder {i}")
+            summaries.append(str(summary(x)))
+        summaries.append("Decoder")
+        summaries.append(str(summary(self.decoder)))
+
+        return summaries
 
     @torch.no_grad()
     def x_to_mu_logvar(self, x):

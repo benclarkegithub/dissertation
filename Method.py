@@ -24,6 +24,10 @@ class Method(ABC):
         pass
 
     @abstractmethod
+    def summary(self):
+        pass
+
+    @abstractmethod
     def x_to_mu_logvar(self, x):
         pass
 

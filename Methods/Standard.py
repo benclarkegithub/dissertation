@@ -1,5 +1,6 @@
 import torch
 import torch.optim as optim
+from torchinfo import summary
 
 from VAE import VAE
 from Method import Method
@@ -43,6 +44,9 @@ class Standard(Method):
 
     def load(self, path):
         self.VAE.load_state_dict(torch.load(f"{path}.pth"))
+
+    def summary(self):
+        return str(summary(self.VAE))
 
     @torch.no_grad()
     def x_to_mu_logvar(self, x):

@@ -8,15 +8,18 @@ import torchvision
 
 
 class Evaluate:
-    def __init__(self, method, experiment):
+    def __init__(self, method, experiment, *, log=True):
         self.method = method
         self.experiment = experiment
         self.path = f"{experiment}/{type(method).__name__}_{experiment}"
+        self.log = log
 
         # Try and load the model
         self.load(verbose=True)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
+        self.log_summary()
+
         avg_train_loss = []
         avg_train_log_prob = []
         avg_train_KLD = []
@@ -64,8 +67,8 @@ class Evaluate:
             avg_val_log_prob.append(np.array(avg_val_log_prob_2).mean())
             avg_val_KLD.append(np.array(avg_val_KLD_2).mean())
 
-            # Print epoch information
-            self.print_epoch_info(
+            # Log epoch information
+            self.log_epoch(
                 epoch=epoch,
                 epoch_time=epoch_time[-1],
                 avg_train_ELBO=-avg_train_loss[-1],
@@ -185,7 +188,7 @@ class Evaluate:
 
     def load(self, verbose=False):
         # Check that the path exists and load the model if it does
-        if exists(self.path):
+        if exists(f"{self.path}.pth"):
             if verbose:
                 print(f"Loading model... {self.path}")
             self.method.load(self.path)
@@ -193,7 +196,18 @@ class Evaluate:
             if verbose:
                 print(f"No model exists... {self.path}")
 
-    def print_epoch_info(self,
+    def log_summary(self):
+        summary = self.method.summary()
+
+        if self.log:
+            # Check if the summary is a string or a list of strings and log accordingly
+            if type(summary) is str:
+                self.write_log(summary)
+            else:
+                for s in summary:
+                    self.write_log(s)
+
+    def log_epoch(self,
                          epoch,
                          epoch_time,
                          avg_train_ELBO,
@@ -203,10 +217,30 @@ class Evaluate:
                          avg_val_log_prob,
                          avg_train_KLD,
                          avg_val_KLD):
-        print(f"[Epoch {epoch:3}] ({epoch_time:.2f}s)\t"
-              f"ELBO: {avg_train_ELBO:.3f} ({avg_val_ELBO:.3f})\t"
-              f"Log prob: {avg_train_log_prob:.3f} ({avg_val_log_prob:.3f})\t"
-              f"KLD: {avg_train_KLD:.3f} ({avg_val_KLD:.3f})\t")
+        message = f"[Epoch {epoch:3}] ({epoch_time:.2f}s)\t"\
+                  f"ELBO: {avg_train_ELBO:.3f} ({avg_val_ELBO:.3f})\t"\
+                  f"Log prob: {avg_train_log_prob:.3f} ({avg_val_log_prob:.3f})\t"\
+                  f"KLD: {avg_train_KLD:.3f} ({avg_val_KLD:.3f})\t"
+
+        # Print to console and log to file
+        print(message)
+
+        if self.log:
+            self.write_log(message)
+
+    def write_log(self, message):
+        # Get the directory name and if it doesn't exist create it
+        path_split = self.path.split("/")
+        if not isdir(path_split[0]):
+            mkdir(path_split[0])
+
+        # Check to see if the log file exists
+        if exists(f"{self.path}.log"):
+            with open(f"{self.path}.log", "a") as file:
+                file.write(f"{message}\n")
+        else:
+            with open(f"{self.path}.log", "w") as file:
+                file.write(f"{message}\n")
 
     def plot_train_val_ELBO(self,
             avg_train_ELBO,
