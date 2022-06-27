@@ -2,12 +2,11 @@ import torch
 import torch.optim as optim
 from torchinfo import summary
 
-from VAE import VAE
 from Method import Method
 
 
 class Standard(Method):
-    def __init__(self, num_latents):
+    def __init__(self, VAE, num_latents):
         super().__init__(num_latents=num_latents)
 
         self.VAE = VAE(num_latents)

@@ -4,10 +4,8 @@ from torch.nn import functional as F
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_latents = 10):
+    def __init__(self):
         super().__init__()
-
-        self.num_latents = num_latents
 
         # Convolutional layers
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=2, kernel_size=3, stride=1, padding=1)
@@ -17,7 +15,7 @@ class Encoder(nn.Module):
 
         # Fully-connected layers
         self.fc1 = nn.Linear(784, 196)
-        self.fc2 = nn.Linear(196, 48)
+        self.fc2 = nn.Linear(196, 49)
 
     def forward(self, x):
         # 1x28x28 = 784 -> 2x28x28 = 1568
@@ -32,7 +30,7 @@ class Encoder(nn.Module):
         x = torch.flatten(x, start_dim=1)
         # 784 -> 196
         x = F.leaky_relu(self.fc1(x))
-        # 196 -> 48
+        # 196 -> 49
         x = F.leaky_relu(self.fc2(x))
 
         return x
@@ -45,11 +43,11 @@ class EncoderToLatents(nn.Module):
         self.num_latents = num_latents
 
         # Fully-connected layers
-        self.fc_mean = nn.Linear(48, num_latents)
-        self.fc_logvar = nn.Linear(48, num_latents)
+        self.fc_mean = nn.Linear(49, num_latents)
+        self.fc_logvar = nn.Linear(49, num_latents)
 
     def forward(self, x):
-        # 48 -> num_latents
+        # 49 -> num_latents
         mu = self.fc_mean(x)
         logvar = self.fc_logvar(x)
 
@@ -63,10 +61,10 @@ class LatentsToDecoder(nn.Module):
         self.num_latents = num_latents
 
         # Fully-connected layers
-        self.fc = nn.Linear(num_latents, 48)
+        self.fc = nn.Linear(num_latents, 49)
 
     def forward(self, x):
-        # num_latents -> 48
+        # num_latents -> 49
         x = F.leaky_relu(self.fc(x))
 
         return x
@@ -77,7 +75,7 @@ class Decoder(nn.Module):
         super().__init__()
 
         # Fully-connected layers
-        self.fc2 = nn.Linear(48, 196)
+        self.fc2 = nn.Linear(49, 196)
         self.fc3 = nn.Linear(196, 784)
 
         # Deconvolutional layers
@@ -87,7 +85,7 @@ class Decoder(nn.Module):
         self.deconv4 = nn.ConvTranspose2d(in_channels=2, out_channels=1, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
-        # 48 -> 196
+        # 49 -> 196
         x = F.leaky_relu(self.fc2(x))
         # 196 -> 784
         x = F.leaky_relu(self.fc3(x))

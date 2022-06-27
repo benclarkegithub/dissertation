@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from torchinfo import summary
 
-from VAE import Encoder, EncoderToLatents, LatentsToDecoder, Decoder
+from Architectures.MNIST_sm import Encoder, EncoderToLatents, LatentsToDecoder, Decoder
 from Method import Method
 
 

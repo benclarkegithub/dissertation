@@ -1,6 +1,7 @@
 from Datasets import MNIST
 from Evaluate import Evaluate as Eval
 from Methods.Standard import Standard
+from Architectures.MNIST_lg import VAE
 
 
 BATCH_SIZE = 128
@@ -11,12 +12,12 @@ mnist = MNIST(root="../../Data" , batch_size=BATCH_SIZE, train_set_size=TRAIN_SE
 
 NUM_LATENTS = 2
 
-method = Standard(num_latents=NUM_LATENTS)
+method = Standard(VAE=VAE, num_latents=NUM_LATENTS)
 
 MAX_EPOCHS = 100
 MAX_NO_IMPROVEMENT = 10
 
-evaluate = Eval(method=method, experiment="Test")
+evaluate = Eval(method=method, experiment="MNIST_lg")
 
 # Train model
 evaluate.train(
