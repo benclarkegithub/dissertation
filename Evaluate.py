@@ -1,11 +1,12 @@
-from os import mkdir
-from os.path import exists, isdir
+from os.path import exists
+import pickle
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torchvision
 
+from Utils import make_dir
 
 class Evaluate:
     def __init__(self, method, experiment, *, log=True):
@@ -14,23 +15,38 @@ class Evaluate:
         self.path = f"{experiment}/{type(method).__name__}_{experiment}"
         self.log = log
 
-        # Try and load the model
-        self.load(verbose=True)
-
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
+        # Try and load the model
+        self.load(best=False, verbose=True)
         self.log_summary()
 
-        avg_train_loss = []
-        avg_train_log_prob = []
-        avg_train_KLD = []
-        avg_val_loss = []
-        avg_val_log_prob = []
-        avg_val_KLD = []
-        best_avg_val_epoch = 1
-        best_avg_val_loss = np.inf
-        epoch_time = []
+        # Load training progress
+        training_progress = self.load_training()
 
-        for epoch in range(1, max_epochs+1):
+        if training_progress is None:
+            avg_train_loss = []
+            avg_train_log_prob = []
+            avg_train_KLD = []
+            avg_val_loss = []
+            avg_val_log_prob = []
+            avg_val_KLD = []
+            best_avg_val_epoch = 1
+            best_avg_val_loss = np.inf
+            current_epoch =  0
+            epoch_time = []
+        else:
+            avg_train_loss = training_progress["avg_train_loss"]
+            avg_train_log_prob = training_progress["avg_train_log_prob"]
+            avg_train_KLD = training_progress["avg_train_KLD"]
+            avg_val_loss = training_progress["avg_val_loss"]
+            avg_val_log_prob = training_progress["avg_val_log_prob"]
+            avg_val_KLD = training_progress["avg_val_KLD"]
+            best_avg_val_epoch = training_progress["best_avg_val_epoch"]
+            best_avg_val_loss = training_progress["best_avg_val_loss"]
+            current_epoch = training_progress["current_epoch"]
+            epoch_time = training_progress["epoch_time"]
+
+        for epoch in range(current_epoch+1, max_epochs+1):
             # Train the model and get the average training loss
             avg_train_loss_2 = []
             avg_train_log_prob_2 = []
@@ -83,24 +99,47 @@ class Evaluate:
                 best_avg_val_epoch = epoch
                 best_avg_val_loss = avg_val_loss[-1]
                 # Save the model
-                self.save()
+                self.save(best=True)
             elif (epoch - best_avg_val_epoch + 1) == max_no_improvement:
                 print(f"No improvement after {max_no_improvement} epochs...")
                 break
 
-        # Plot average training/validation loss over epochs
-        avg_train_ELBO = -np.array(avg_train_loss)
-        avg_val_ELBO = -np.array(avg_val_loss)
+            # Save training progress
+            self.save(best=False)
+            self.save_training(avg_train_loss=avg_train_loss,
+                               avg_train_log_prob=avg_train_log_prob,
+                               avg_train_KLD=avg_train_KLD,
+                               avg_val_loss=avg_val_loss,
+                               avg_val_log_prob=avg_val_log_prob,
+                               avg_val_KLD=avg_val_KLD,
+                               best_avg_val_epoch=best_avg_val_epoch,
+                               best_avg_val_loss=best_avg_val_loss,
+                               current_epoch=epoch,
+                               epoch_time=epoch_time)
 
+        # Log training stats
+        self.log_training(
+            best_epoch=best_avg_val_epoch,
+            training_time=sum(epoch_time),
+            best_train_ELBO=-min(avg_train_loss),
+            best_train_log_prob=max(avg_train_log_prob),
+            best_val_ELBO=-min(avg_val_loss),
+            best_val_log_prob=max(avg_val_log_prob)
+        )
+
+        # Plot average training/validation loss over epochs
         self.plot_train_val_ELBO(
-            avg_train_ELBO=avg_train_ELBO,
-            avg_val_ELBO=avg_val_ELBO,
+            avg_train_ELBO=-np.array(avg_train_loss),
+            avg_val_ELBO=-np.array(avg_val_loss),
             avg_train_log_prob=avg_train_log_prob,
             avg_val_log_prob=avg_val_log_prob)
 
         self.plot_train_val_KLD(avg_train_KLD=avg_train_KLD, avg_val_KLD=avg_val_KLD)
 
     def test(self, test_loader, *, avg_var=True, output_images=True, output_images_opt=None):
+        # Try and load the best model
+        self.load(best=True, verbose=True)
+
         if avg_var:
             # Calculate mu, var, z mean and variance
             mu = None
@@ -123,16 +162,33 @@ class Evaluate:
             avg_mu = mu.mean(dim=0)
             avg_var = var.mean(dim=0)
             avg_z = z.mean(dim=0)
-            var_mu = mu.var(dim=0)
-            var_var = var.var(dim=0)
-            var_z = z.var(dim=0)
+            max_mu = mu.max(dim=0)
+            max_var = var.max(dim=0)
+            max_z = z.max(dim=0)
+            min_mu = mu.min(dim=0)
+            min_var = var.min(dim=0)
+            min_z = z.min(dim=0)
+            cov_mu = np.cov(mu.T)
+            cov_var = np.cov(var.T)
+            cov_z = np.cov(z.T)
 
-            print(f"Avg. mu: {avg_mu}")
-            print(f"Avg. var: {avg_var}")
-            print(f"Avg. z: {avg_z}")
-            print(f"Var. mu: {var_mu}")
-            print(f"Var. var: {var_var}")
-            print(f"Var. z: {var_z}")
+            message = f"Avg. mu: {avg_mu}\n"\
+                      f"Avg. var: {avg_var}\n"\
+                      f"Avg. z: {avg_z}\n"\
+                      f"Max. mu: {max_mu.values}\n"\
+                      f"Max. var: {max_var.values}\n"\
+                      f"Max. z: {max_z.values}\n"\
+                      f"Min. mu: {min_mu.values}\n"\
+                      f"Min. var: {min_var.values}\n"\
+                      f"Min. z: {min_z.values}\n"\
+                      f"Cov. mu: {cov_mu}\n" \
+                      f"Cov. var: {cov_var}\n" \
+                      f"Cov. z: {cov_z}\n"
+
+            print(message)
+
+            if self.log:
+                self.write_log(message)
 
         if output_images:
             if not output_images_opt:
@@ -176,25 +232,64 @@ class Evaluate:
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
             plt.show()
 
-    def save(self, verbose=False):
+    def save(self, best, verbose=False):
+        path = self.path + "_Best" if best else self.path
         if verbose:
-            print(f"Saving model... {self.path}")
+            print(f"Saving model... {path}")
         # Get the directory name and if it doesn't exist create it
-        path_split = self.path.split("/")
-        if not isdir(path_split[0]):
-            mkdir(path_split[0])
+        make_dir(path)
         # Save
-        self.method.save(self.path)
+        self.method.save(path)
 
-    def load(self, verbose=False):
+    def load(self, best, verbose=False):
+        path = self.path + "_Best" if best else self.path
         # Check that the path exists and load the model if it does
-        if exists(f"{self.path}.pth"):
+        if exists(f"{path}.pth"):
             if verbose:
-                print(f"Loading model... {self.path}")
-            self.method.load(self.path)
+                print(f"Loading model... {path}")
+            self.method.load(path)
         else:
             if verbose:
-                print(f"No model exists... {self.path}")
+                print(f"No model exists... {path}")
+
+    def save_training(self,
+                      avg_train_loss,
+                      avg_train_log_prob,
+                      avg_train_KLD,
+                      avg_val_loss,
+                      avg_val_log_prob,
+                      avg_val_KLD,
+                      best_avg_val_epoch,
+                      best_avg_val_loss,
+                      current_epoch,
+                      epoch_time):
+        # Get the directory name and if it doesn't exist create it
+        make_dir(self.path)
+
+        training_progress = {
+            "avg_train_loss": avg_train_loss,
+            "avg_train_log_prob": avg_train_log_prob,
+            "avg_train_KLD": avg_train_KLD,
+            "avg_val_loss": avg_val_loss,
+            "avg_val_log_prob": avg_val_log_prob,
+            "avg_val_KLD": avg_val_KLD,
+            "best_avg_val_epoch": best_avg_val_epoch,
+            "best_avg_val_loss": best_avg_val_loss,
+            "current_epoch": current_epoch,
+            "epoch_time": epoch_time,
+        }
+
+        with open(f"{self.path}.pkl", "wb") as file:
+            pickle.dump(training_progress, file)
+
+    def load_training(self):
+        training_progress = None
+
+        if exists(f"{self.path}.pkl"):
+            with open(f"{self.path}.pkl", "rb") as file:
+                training_progress = pickle.load(file)
+
+        return training_progress
 
     def log_summary(self):
         summary = self.method.summary()
@@ -208,15 +303,15 @@ class Evaluate:
                     self.write_log(s)
 
     def log_epoch(self,
-                         epoch,
-                         epoch_time,
-                         avg_train_ELBO,
-                         avg_val_ELBO,
-                         *,
-                         avg_train_log_prob,
-                         avg_val_log_prob,
-                         avg_train_KLD,
-                         avg_val_KLD):
+                  epoch,
+                  epoch_time,
+                  avg_train_ELBO,
+                  avg_val_ELBO,
+                  *,
+                  avg_train_log_prob,
+                  avg_val_log_prob,
+                  avg_train_KLD,
+                  avg_val_KLD):
         message = f"[Epoch {epoch:3}] ({epoch_time:.2f}s)\t"\
                   f"ELBO: {avg_train_ELBO:.3f} ({avg_val_ELBO:.3f})\t"\
                   f"Log prob: {avg_train_log_prob:.3f} ({avg_val_log_prob:.3f})\t"\
@@ -228,11 +323,27 @@ class Evaluate:
         if self.log:
             self.write_log(message)
 
+    def log_training(self,
+                     best_epoch,
+                     training_time,
+                     best_train_ELBO,
+                     best_train_log_prob,
+                     best_val_ELBO,
+                     best_val_log_prob):
+        message = f"Best epoch: {best_epoch}\t"\
+                  f"Training time: {training_time:.2f}s\t" \
+                  f"Best ELBO: {best_train_ELBO:.3f} ({best_val_ELBO:.3f})\t" \
+                  f"Best log prob: {best_train_log_prob:.3f} ({best_val_log_prob:.3f})"
+
+        # Print to console and log to file
+        print(message)
+
+        if self.log:
+            self.write_log(message)
+
     def write_log(self, message):
         # Get the directory name and if it doesn't exist create it
-        path_split = self.path.split("/")
-        if not isdir(path_split[0]):
-            mkdir(path_split[0])
+        make_dir(self.path)
 
         # Check to see if the log file exists
         if exists(f"{self.path}.log"):
