@@ -40,7 +40,7 @@ class Method(ABC):
 
     def ELBO(self, logits, x, mu, logvar, *, beta=1):
         CB_log_prob = self.CB_log_prob_fn(logits, x)
-        KLD = -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)
+        KLD = self.KLD_fn(mu, logvar)
 
         return (CB_log_prob - (beta * KLD)).mean(), CB_log_prob.mean(), KLD.mean()
 
@@ -51,3 +51,6 @@ class Method(ABC):
         CB_log_prob = CB.log_prob(x).sum(dim=-1)
 
         return CB_log_prob
+
+    def KLD_fn(self, mu, logvar):
+        return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)

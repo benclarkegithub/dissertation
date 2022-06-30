@@ -2,21 +2,20 @@ import torch
 import torch.optim as optim
 from torchinfo import summary
 
-from Architectures.MNIST_sm import Encoder, EncoderToLatents, LatentsToDecoder, Decoder
 from Method import Method
 
 
 class Single(Method):
-    def __init__(self, num_latents, num_latents_group):
+    def __init__(self, architecture, num_latents, num_latents_group):
         super().__init__(num_latents=num_latents)
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
 
-        self.encoder = Encoder()
-        self.enc_to_lats = [EncoderToLatents(num_latents_group) for _ in range(self.num_groups)]
-        self.lats_to_dec = [LatentsToDecoder(num_latents_group) for _ in range(self.num_groups)]
-        self.decoder = Decoder()
+        self.encoder = architecture["Encoder"]()
+        self.enc_to_lats = [architecture["EncoderToLatents"](num_latents_group) for _ in range(self.num_groups)]
+        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents_group) for _ in range(self.num_groups)]
+        self.decoder = architecture["Decoder"]()
 
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3) # 0.001
         self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-3) for x in self.enc_to_lats] # 0.001
@@ -73,19 +72,19 @@ class Single(Method):
                 with torch.no_grad():
                     z_dec = z_dec + self.lats_to_dec[j](z[:, j, None])
 
-            z_dec = self.lats_to_dec[i](z[:, i, None])
+            z_dec = z_dec + self.lats_to_dec[i](z[:, i, None])
 
             logits = self.decoder(z_dec)
 
-            # Loss, backwards
-            loss, log_prob, KLD = self.ELBO(logits, images.view(-1, 28 * 28), mu, logvar)
+            # Loss, backward
+            loss, log_prob, KLD = self.ELBO(logits, images.view(-1, 28 * 28), mu_3, logvar_3)
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
             loss.backward(retain_graph=True)
             # Total
-            total_loss = total_loss + loss
-            total_log_prob = total_log_prob + log_prob
-            total_KLD = total_KLD + KLD
+            total_loss += loss
+            total_log_prob += log_prob
+            total_KLD += KLD
 
         # Step
         self.optimiser_encoder.step()
@@ -94,6 +93,10 @@ class Single(Method):
         for x in self.optimiser_lats_to_dec:
             x.step()
         self.optimiser_decoder.step()
+
+        total_loss /= self.num_groups
+        total_log_prob /= self.num_groups
+        total_KLD /= self.num_groups
 
         return total_loss.item(), total_log_prob.item(), total_KLD.item()
 
