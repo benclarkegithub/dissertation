@@ -23,9 +23,9 @@ class Single(Method):
         self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-3) # 0.001
 
     def train(self, i, data):
-        total_loss = torch.tensor(0.0, requires_grad=False)
-        total_log_prob = torch.tensor(0.0, requires_grad=False)
-        total_KLD = torch.tensor(0.0, requires_grad=False)
+        losses = []
+        log_probs = []
+        KLDs = []
 
         # Get the input images
         images, _ = data
@@ -70,9 +70,9 @@ class Single(Method):
 
             for j in range(i):
                 with torch.no_grad():
-                    z_dec = z_dec + self.lats_to_dec[j](z[:, j, None])
+                    z_dec = z_dec + self.lats_to_dec[j](z[:, j:j+self.num_latents_group])
 
-            z_dec = z_dec + self.lats_to_dec[i](z[:, i, None])
+            z_dec = z_dec + self.lats_to_dec[i](z[:, i:i+self.num_latents_group])
 
             logits = self.decoder(z_dec)
 
@@ -81,10 +81,10 @@ class Single(Method):
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
             loss.backward(retain_graph=True)
-            # Total
-            total_loss += loss
-            total_log_prob += log_prob
-            total_KLD += KLD
+            # Keep track of losses, log probs, and KLDs
+            losses.append(loss.detach())
+            log_probs.append(log_prob.detach())
+            KLDs.append(KLD.detach())
 
         # Step
         self.optimiser_encoder.step()
@@ -94,11 +94,7 @@ class Single(Method):
             x.step()
         self.optimiser_decoder.step()
 
-        total_loss /= self.num_groups
-        total_log_prob /= self.num_groups
-        total_KLD /= self.num_groups
-
-        return total_loss.item(), total_log_prob.item(), total_KLD.item()
+        return losses, log_probs, KLDs
 
     @torch.no_grad()
     def test(self, i, data):
@@ -126,7 +122,7 @@ class Single(Method):
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(logits, images.view(-1, 28 * 28), mu, logvar)
 
-        return output, -loss.item(), log_prob.item(), KLD.item()
+        return output, [-loss.item()], [log_prob.item()], [KLD.item()]
 
     def save(self, path):
         torch.save(self.encoder.state_dict(), f"{path}.pth")
@@ -179,10 +175,10 @@ class Single(Method):
 
     @torch.no_grad()
     def z_to_logits(self, z):
-        z_dec = self.lats_to_dec[0](z[:, 0, None])
+        z_dec = self.lats_to_dec[0](z[:, 0:self.num_latents_group])
 
         for i in range(1, self.num_groups):
-            z_dec = z_dec + self.lats_to_dec[i](z[:, i, None])
+            z_dec = z_dec + self.lats_to_dec[i](z[:, i:i+self.num_latents_group])
 
         logits = self.decoder(z_dec)
 

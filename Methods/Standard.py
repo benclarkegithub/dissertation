@@ -25,7 +25,7 @@ class Standard(Method):
         loss.backward()
         self.optimiser.step()
 
-        return loss.item(), log_prob.item(), KLD.item()
+        return [loss.item()], [log_prob.item()], [KLD.item()]
 
     @torch.no_grad()
     def test(self, i, data):
@@ -36,7 +36,7 @@ class Standard(Method):
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(output["logits"], images.view(-1, 28 * 28), output["mu"], output["logvar"])
 
-        return output, -loss.item(), log_prob.item(), KLD.item()
+        return output, [-loss.item()], [log_prob.item()], [KLD.item()]
 
     def save(self, path):
         torch.save(self.VAE.state_dict(), f"{path}.pth")
