@@ -198,7 +198,7 @@ class Evaluate:
             Z = torch.tensor([[x, y] for y in Y for x in X])
 
             # Output images for every pair of latent variables, i.e. (z1, z2), (z3, z4), ...
-            for z_i in np.arange(0, self.method.get_num_latents(), 2):
+            for z_i in np.arange(0, self.method.get_num_latents()-1, 2):
                 Z_input = torch.zeros(total_number, self.method.get_num_latents())
                 Z_input[:, z_i:z_i+2] = Z
 
@@ -326,8 +326,8 @@ class Evaluate:
 
         best_train_ELBO = -avg_train_loss[:, -1].min()
         best_val_ELBO = -avg_val_loss[:, -1].min()
-        best_train_log_prob = -avg_train_log_prob[:, -1].min()
-        best_val_log_prob = -avg_val_log_prob[:, -1].min()
+        best_train_log_prob = avg_train_log_prob[:, -1].max()
+        best_val_log_prob = avg_val_log_prob[:, -1].max()
 
         message = f"Best epoch: {best_epoch}\t"\
                   f"Training time: {training_time:.2f}s\t" \
