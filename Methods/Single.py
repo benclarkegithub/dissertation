@@ -22,10 +22,11 @@ class Single(Method):
         self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-3) for x in self.lats_to_dec] # 0.001
         self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-3) # 0.001
 
-    def train(self, i, data):
+    def train(self, i, data, *, get_grad=False):
         losses = []
         log_probs = []
         KLDs = []
+        grads = []
 
         # Get the input images
         images, _ = data
@@ -81,10 +82,21 @@ class Single(Method):
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
             loss.backward(retain_graph=True)
+
             # Keep track of losses, log probs, and KLDs
             losses.append(loss.detach())
             log_probs.append(log_prob.detach())
             KLDs.append(KLD.detach())
+
+            # Get the gradients
+            if get_grad:
+                grad = []
+
+                for x in [self.encoder, self.enc_to_lats[i], self.lats_to_dec[i], self.decoder]:
+                    for name, param in x.named_parameters():
+                        grad.append(param.grad.abs().flatten())
+
+                grads.append(torch.concat(grad).mean().item())
 
         # Step
         self.optimiser_encoder.step()
@@ -94,7 +106,7 @@ class Single(Method):
             x.step()
         self.optimiser_decoder.step()
 
-        return losses, log_probs, KLDs
+        return losses, log_probs, KLDs, grads
 
     @torch.no_grad()
     def test(self, i, data):

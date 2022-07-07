@@ -15,7 +15,7 @@ class Evaluate:
         self.path = f"{experiment}/{type(method).__name__}_{experiment}"
         self.log = log
 
-    def train(self, train_loader, val_loader, max_epochs, max_no_improvement):
+    def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
         # Try and load the model
         self.load(best=False, verbose=True)
         self.log_summary()
@@ -27,6 +27,7 @@ class Evaluate:
             avg_train_loss = []
             avg_train_log_prob = []
             avg_train_KLD = []
+            grad = []
             avg_val_loss = []
             avg_val_log_prob = []
             avg_val_KLD = []
@@ -38,6 +39,7 @@ class Evaluate:
             avg_train_loss = training_progress["avg_train_loss"]
             avg_train_log_prob = training_progress["avg_train_log_prob"]
             avg_train_KLD = training_progress["avg_train_KLD"]
+            grad = training_progress["grad"]
             avg_val_loss = training_progress["avg_val_loss"]
             avg_val_log_prob = training_progress["avg_val_log_prob"]
             avg_val_KLD = training_progress["avg_val_KLD"]
@@ -51,15 +53,18 @@ class Evaluate:
             avg_train_loss_2 = []
             avg_train_log_prob_2 = []
             avg_train_KLD_2 = []
+            grad_2 = []
 
             # Keep track of the training time
             start = time.time()
 
             for i, data in enumerate(train_loader):
-                losses, log_probs, KLDs = self.method.train(i=i, data=data)
+                losses, log_probs, KLDs, grads = self.method.train(i=i, data=data, get_grad=get_grad)
                 avg_train_loss_2.append(losses)
                 avg_train_log_prob_2.append(log_probs)
                 avg_train_KLD_2.append(KLDs)
+                if get_grad:
+                    grad_2.append(grads)
 
             # Keep track of the training time
             end = time.time()
@@ -68,6 +73,8 @@ class Evaluate:
             avg_train_loss.append(np.array(avg_train_loss_2).mean(axis=0))
             avg_train_log_prob.append(np.array(avg_train_log_prob_2).mean(axis=0))
             avg_train_KLD.append(np.array(avg_train_KLD_2).mean(axis=0))
+            if get_grad:
+                grad.append(np.array(grad_2).mean(axis=0))
 
             # Get the trained model's average validation loss
             avg_val_loss_2 = []
@@ -93,7 +100,8 @@ class Evaluate:
                 avg_train_log_probs=avg_train_log_prob[-1],
                 avg_val_log_probs=avg_val_log_prob[-1],
                 avg_train_KLDs=avg_train_KLD[-1],
-                avg_val_KLDs=avg_val_KLD[-1])
+                avg_val_KLDs=avg_val_KLD[-1],
+                grad=(grad[-1] if get_grad else None))
 
             # Check if the average validation loss is the best
             if avg_val_loss[-1][-1] < best_avg_val_loss:
@@ -110,6 +118,7 @@ class Evaluate:
             self.save_training(avg_train_loss=avg_train_loss,
                                avg_train_log_prob=avg_train_log_prob,
                                avg_train_KLD=avg_train_KLD,
+                               grad=grad,
                                avg_val_loss=avg_val_loss,
                                avg_val_log_prob=avg_val_log_prob,
                                avg_val_KLD=avg_val_KLD,
@@ -131,6 +140,8 @@ class Evaluate:
         # Plot training/validation ELBO and KL divergence
         self.plot_training_ELBO(avg_train_loss=avg_train_loss, avg_val_loss=avg_val_loss)
         self.plot_training_KLD(avg_train_KLD=avg_train_KLD, avg_val_KLD=avg_val_KLD)
+        if get_grad:
+            self.plot_grad(grad=grad)
 
     def test(self, test_loader, *, avg_var=True, output_images=True, output_images_opt=None):
         # Try and load the best model
@@ -251,7 +262,9 @@ class Evaluate:
                       best_avg_val_epoch,
                       best_avg_val_loss,
                       current_epoch,
-                      epoch_time):
+                      epoch_time,
+                      *,
+                      grad):
         # Get the directory name and if it doesn't exist create it
         make_dir(self.path)
 
@@ -259,6 +272,7 @@ class Evaluate:
             "avg_train_loss": avg_train_loss,
             "avg_train_log_prob": avg_train_log_prob,
             "avg_train_KLD": avg_train_KLD,
+            "grad": grad,
             "avg_val_loss": avg_val_loss,
             "avg_val_log_prob": avg_val_log_prob,
             "avg_val_KLD": avg_val_KLD,
@@ -300,7 +314,8 @@ class Evaluate:
                   avg_train_log_probs,
                   avg_val_log_probs,
                   avg_train_KLDs,
-                  avg_val_KLDs):
+                  avg_val_KLDs,
+                  grad):
         message = f"[Epoch {epoch:3} ({epoch_time:.2f}s)]\t" \
                   f"ELBO: {', '.join([f'{-x:.3f}' for x in avg_train_losses])}" \
                   f" ({', '.join([f'{-x:.3f}' for x in avg_val_losses])})\t" \
@@ -308,6 +323,9 @@ class Evaluate:
                   f" ({', '.join([f'{x:.3f}' for x in avg_val_log_probs])})\t" \
                   f"KLD: {', '.join([f'{x:.3f}' for x in avg_train_KLDs])}" \
                   f" ({', '.join([f'{x:.3f}' for x in avg_val_KLDs])})"
+
+        if grad is not None:
+            message += f"\tGrad: {', '.join([f'{x:.3f}' for x in grad])}"
 
         # Log message
         self.write_log(message)
@@ -398,4 +416,18 @@ class Evaluate:
 
         plt.legend()
         plt.savefig(f"{self.path}_KLD.png")
+        plt.show()
+
+    def plot_grad(self, grad):
+        grad = np.stack(grad)
+
+        plt.title(f"{type(self.method).__name__} {self.experiment} avg. gradient norm")
+        epochs, train_groups = grad.shape
+        X = np.arange(1, epochs + 1)
+
+        for g_i in range(train_groups):
+            plt.plot(X, grad[:, g_i], label=f"Z{g_i+1}")
+
+        plt.legend()
+        plt.savefig(f"{self.path}_grad.png")
         plt.show()
