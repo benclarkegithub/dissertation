@@ -1,5 +1,6 @@
 from os.path import exists
 import pickle
+import random
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,11 +10,19 @@ import torchvision
 from Utils import make_dir
 
 class Evaluate:
-    def __init__(self, method, experiment, *, log=True):
+    def __init__(self, method, experiment, *, log=True, seed=None):
         self.method = method
         self.experiment = experiment
         self.path = f"{experiment}/{type(method).__name__}_{experiment}"
         self.log = log
+        if seed is not None:
+            self.seed_everything(seed)
+
+    def seed_everything(self, seed):
+        # https://pytorch.org/docs/stable/notes/randomness.html
+        torch.manual_seed(seed)
+        random.seed(seed)
+        np.random.seed(seed)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
         # Try and load the model

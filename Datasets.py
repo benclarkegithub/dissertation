@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
-
+import random
+import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
 
+from Utils import seed_worker
+
 
 class Dataset(ABC):
-    def __init__(self, root, batch_size, train_set_size, val_set_size):
+    def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
         self.root = root
         self.batch_size = batch_size
         self.train_set_size = train_set_size
@@ -15,6 +18,18 @@ class Dataset(ABC):
         self.transform = transforms.Compose(
             [transforms.ToTensor()]
         )
+
+        if seed is not None:
+            self.seed_everything(seed)
+
+    def seed_everything(self, seed):
+        # https://pytorch.org/docs/stable/notes/randomness.html
+        torch.manual_seed(seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        # https://pytorch.org/docs/stable/notes/randomness.html#dataloader
+        self.g = torch.Generator()
+        self.g.manual_seed(seed)
 
     @abstractmethod
     def get_train_loader(self):
@@ -34,8 +49,8 @@ class Dataset(ABC):
 
 
 class MNIST(Dataset):
-    def __init__(self, root, batch_size, train_set_size, val_set_size):
-        super().__init__(root, batch_size, train_set_size, val_set_size)
+    def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
+        super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
 
         # Get datasets
         train_dataset = torchvision.datasets.MNIST(
@@ -48,7 +63,8 @@ class MNIST(Dataset):
             train_dataset, [self.train_set_size, self.val_set_size])
 
         # Load train, validation, and test sets
-        self.train_loader = torch.utils.data.DataLoader(train_set, batch_size=self.batch_size, shuffle=True)
+        self.train_loader = torch.utils.data.DataLoader(
+            train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
         self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
         self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
 

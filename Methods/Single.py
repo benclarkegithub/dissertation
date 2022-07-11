@@ -6,11 +6,12 @@ from Method import Method
 
 
 class Single(Method):
-    def __init__(self, architecture, num_latents, num_latents_group):
+    def __init__(self, architecture, num_latents, num_latents_group, *, step="Multiple"):
         super().__init__(num_latents=num_latents)
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
+        self.step = step
 
         self.encoder = architecture["Encoder"]()
         self.enc_to_lats = [architecture["EncoderToLatents"](num_latents_group) for _ in range(self.num_groups)]
@@ -31,19 +32,31 @@ class Single(Method):
         # Get the input images
         images, _ = data
 
-        # Zero the parameter's gradients
-        self.optimiser_encoder.zero_grad()
-        for x in self.optimiser_enc_to_lats:
-            x.zero_grad()
-        for x in self.optimiser_lats_to_dec:
-            x.zero_grad()
-        self.optimiser_decoder.zero_grad()
+        if self.step == "Single":
+            # Zero the parameter's gradients
+            self.optimiser_encoder.zero_grad()
+            for x in self.optimiser_enc_to_lats:
+                x.zero_grad()
+            for x in self.optimiser_lats_to_dec:
+                x.zero_grad()
+            self.optimiser_decoder.zero_grad()
 
-        # Forward
-        # Get the encoder output
-        x_enc = self.encoder(images)
+            # Forward
+            # Get the encoder output
+            x_enc = self.encoder(images)
 
         for i in range(self.num_groups):
+            if self.step == "Multiple":
+                # Zero the parameter's gradients
+                self.optimiser_encoder.zero_grad()
+                self.optimiser_enc_to_lats[i].zero_grad()
+                self.optimiser_lats_to_dec[i].zero_grad()
+                self.optimiser_decoder.zero_grad()
+
+                # Forward
+                # Get the encoder output
+                x_enc = self.encoder(images)
+
             # Forward
             mu = []
             logvar = []
@@ -81,7 +94,10 @@ class Single(Method):
             loss, log_prob, KLD = self.ELBO(logits, images.view(-1, 28 * 28), mu_3, logvar_3)
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
-            loss.backward(retain_graph=True)
+            if self.step == "Single":
+                loss.backward(retain_graph=True)
+            elif self.step == "Multiple":
+                loss.backward()
 
             # Keep track of losses, log probs, and KLDs
             losses.append(loss.detach())
@@ -98,13 +114,21 @@ class Single(Method):
 
                 grads.append(torch.concat(grad).mean().item())
 
-        # Step
-        self.optimiser_encoder.step()
-        for x in self.optimiser_enc_to_lats:
-            x.step()
-        for x in self.optimiser_lats_to_dec:
-            x.step()
-        self.optimiser_decoder.step()
+            if self.step == "Multiple":
+                # Step
+                self.optimiser_encoder.step()
+                self.optimiser_enc_to_lats[i].step()
+                self.optimiser_lats_to_dec[i].step()
+                self.optimiser_decoder.step()
+
+        if self.step == "Single":
+            # Step
+            self.optimiser_encoder.step()
+            for x in self.optimiser_enc_to_lats:
+                x.step()
+            for x in self.optimiser_lats_to_dec:
+                x.step()
+            self.optimiser_decoder.step()
 
         return losses, log_probs, KLDs, grads
 
