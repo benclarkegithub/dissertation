@@ -7,7 +7,7 @@ from Method import Method
 
 class Standard(Method):
     def __init__(self, VAE, num_latents):
-        super().__init__(num_latents=num_latents)
+        super().__init__(num_latents=num_latents, type="Single")
 
         self.VAE = VAE(num_latents)
         self.optimiser = optim.Adam(self.VAE.parameters(), lr=1e-3) # 0.001

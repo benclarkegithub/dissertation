@@ -7,7 +7,7 @@ from Method import Method
 
 class Single(Method):
     def __init__(self, architecture, num_latents, num_latents_group, *, step="Multiple"):
-        super().__init__(num_latents=num_latents)
+        super().__init__(num_latents=num_latents, type="Single")
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group

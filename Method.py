@@ -4,15 +4,16 @@ import torch
 
 
 class Method(ABC):
-    def __init__(self, num_latents):
+    def __init__(self, num_latents, type):
         self.num_latents = num_latents
+        self.type = type
 
     @abstractmethod
-    def train(self, batch_i, data):
+    def train(self, i, data, *, get_grad=False):
         pass
 
     @abstractmethod
-    def test(self, batch_i, data):
+    def test(self, i, data):
         pass
 
     @abstractmethod
@@ -37,6 +38,9 @@ class Method(ABC):
 
     def get_num_latents(self):
         return self.num_latents
+
+    def get_type(self):
+        return self.type
 
     def ELBO(self, logits, x, mu, logvar, *, beta=1):
         CB_log_prob = self.CB_log_prob_fn(logits, x)

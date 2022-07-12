@@ -25,25 +25,29 @@ class Evaluate:
         np.random.seed(seed)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
-        # Try and load the model
+        # Try and load the model(s) and training progress
         self.load(best=False, verbose=True)
-        self.log_summary()
-
-        # Load training progress
         training_progress = self.load_training()
 
+        # Determine the number of models to train
+        models = 1 if self.method.get_type() == "Single" else self.method.get_num_latents_group()
+
         if training_progress is None:
-            avg_train_loss = []
-            avg_train_log_prob = []
-            avg_train_KLD = []
-            grad = []
-            avg_val_loss = []
-            avg_val_log_prob = []
-            avg_val_KLD = []
-            best_avg_val_epoch = 1
-            best_avg_val_loss = np.inf
+            # If this is the first time training, log a summary of the model(s)
+            self.log_summary()
+
+            avg_train_loss = [[] for _ in range(models)]
+            avg_train_log_prob = [[] for _ in range(models)]
+            avg_train_KLD = [[] for _ in range(models)]
+            grad = [[] for _ in range(models)]
+            avg_val_loss = [[] for _ in range(models)]
+            avg_val_log_prob = [[] for _ in range(models)]
+            avg_val_KLD = [[] for _ in range(models)]
+            best_avg_val_epoch = [1 for _ in range(models)]
+            best_avg_val_loss = [np.inf for _ in range(models)]
+            current_model = 0
             current_epoch =  0
-            epoch_time = []
+            epoch_time = [[] for _ in range(models)]
         else:
             avg_train_loss = training_progress["avg_train_loss"]
             avg_train_log_prob = training_progress["avg_train_log_prob"]
@@ -54,92 +58,104 @@ class Evaluate:
             avg_val_KLD = training_progress["avg_val_KLD"]
             best_avg_val_epoch = training_progress["best_avg_val_epoch"]
             best_avg_val_loss = training_progress["best_avg_val_loss"]
+            current_model = training_progress["current_model"]
             current_epoch = training_progress["current_epoch"]
             epoch_time = training_progress["epoch_time"]
 
-        for epoch in range(current_epoch+1, max_epochs+1):
-            # Train the model and get the average training loss
-            avg_train_loss_2 = []
-            avg_train_log_prob_2 = []
-            avg_train_KLD_2 = []
-            grad_2 = []
+        for model in range(current_model, models):
+            if self.method.get_type() == "Multiple":
+                self.write_log(f"Training model {model+1}/{models+1}...")
 
-            # Keep track of the training time
-            start = time.time()
+            for epoch in range(current_epoch+1, max_epochs+1):
+                # Train the model and get the average training loss
+                avg_train_loss_2 = []
+                avg_train_log_prob_2 = []
+                avg_train_KLD_2 = []
+                grad_2 = []
 
-            for i, data in enumerate(train_loader):
-                losses, log_probs, KLDs, grads = self.method.train(i=i, data=data, get_grad=get_grad)
-                avg_train_loss_2.append(losses)
-                avg_train_log_prob_2.append(log_probs)
-                avg_train_KLD_2.append(KLDs)
+                # Keep track of the training time
+                start = time.time()
+
+                for i, data in enumerate(train_loader):
+                    # If the method has multiple models, pass the model number
+                    if self.method.get_type() == "Single":
+                        losses, log_probs, KLDs, grads = self.method.train(i=i, data=data, get_grad=get_grad)
+                    else:
+                        losses, log_probs, KLDs, grads = self.method.train(
+                            i=i, data=data, get_grad=get_grad, model=model)
+                    avg_train_loss_2.append(losses)
+                    avg_train_log_prob_2.append(log_probs)
+                    avg_train_KLD_2.append(KLDs)
+                    if get_grad:
+                        grad_2.append(grads)
+
+                # Keep track of the training time
+                end = time.time()
+                epoch_time[model].append(end - start)
+
+                avg_train_loss[model].append(np.array(avg_train_loss_2).mean(axis=0))
+                avg_train_log_prob[model].append(np.array(avg_train_log_prob_2).mean(axis=0))
+                avg_train_KLD[model].append(np.array(avg_train_KLD_2).mean(axis=0))
                 if get_grad:
-                    grad_2.append(grads)
+                    grad[model].append(np.array(grad_2).mean(axis=0))
 
-            # Keep track of the training time
-            end = time.time()
-            epoch_time.append(end - start)
+                # Get the trained model's average validation loss
+                avg_val_loss_2 = []
+                avg_val_log_prob_2 = []
+                avg_val_KLD_2 = []
 
-            avg_train_loss.append(np.array(avg_train_loss_2).mean(axis=0))
-            avg_train_log_prob.append(np.array(avg_train_log_prob_2).mean(axis=0))
-            avg_train_KLD.append(np.array(avg_train_KLD_2).mean(axis=0))
-            if get_grad:
-                grad.append(np.array(grad_2).mean(axis=0))
+                for i, data in enumerate(val_loader):
+                    output, losses, log_probs, KLDs = self.method.test(i=i, data=data)
+                    avg_val_loss_2.append(losses)
+                    avg_val_log_prob_2.append(log_probs)
+                    avg_val_KLD_2.append(KLDs)
 
-            # Get the trained model's average validation loss
-            avg_val_loss_2 = []
-            avg_val_log_prob_2 = []
-            avg_val_KLD_2 = []
+                avg_val_loss[model].append(np.array(avg_val_loss_2).mean(axis=0))
+                avg_val_log_prob[model].append(np.array(avg_val_log_prob_2).mean(axis=0))
+                avg_val_KLD[model].append(np.array(avg_val_KLD_2).mean(axis=0))
 
-            for i, data in enumerate(val_loader):
-                output, losses, log_probs, KLDs = self.method.test(i=i, data=data)
-                avg_val_loss_2.append(losses)
-                avg_val_log_prob_2.append(log_probs)
-                avg_val_KLD_2.append(KLDs)
+                # Log epoch information
+                grad_param = grad[model][-1] if get_grad else None
+                self.log_epoch(
+                    epoch=epoch,
+                    epoch_time=epoch_time[model][-1],
+                    avg_train_losses=avg_train_loss[model][-1],
+                    avg_val_losses=avg_val_loss[model][-1],
+                    avg_train_log_probs=avg_train_log_prob[model][-1],
+                    avg_val_log_probs=avg_val_log_prob[model][-1],
+                    avg_train_KLDs=avg_train_KLD[model][-1],
+                    avg_val_KLDs=avg_val_KLD[model][-1],
+                    grad=grad_param)
 
-            avg_val_loss.append(np.array(avg_val_loss_2).mean(axis=0))
-            avg_val_log_prob.append(np.array(avg_val_log_prob_2).mean(axis=0))
-            avg_val_KLD.append(np.array(avg_val_KLD_2).mean(axis=0))
+                # Save training progress
+                self.save(best=False)
+                self.save_training(avg_train_loss=avg_train_loss,
+                                   avg_train_log_prob=avg_train_log_prob,
+                                   avg_train_KLD=avg_train_KLD,
+                                   grad=grad,
+                                   avg_val_loss=avg_val_loss,
+                                   avg_val_log_prob=avg_val_log_prob,
+                                   avg_val_KLD=avg_val_KLD,
+                                   best_avg_val_epoch=best_avg_val_epoch,
+                                   best_avg_val_loss=best_avg_val_loss,
+                                   current_model=model,
+                                   current_epoch=epoch,
+                                   epoch_time=epoch_time)
 
-            # Log epoch information
-            self.log_epoch(
-                epoch=epoch,
-                epoch_time=epoch_time[-1],
-                avg_train_losses=avg_train_loss[-1],
-                avg_val_losses=avg_val_loss[-1],
-                avg_train_log_probs=avg_train_log_prob[-1],
-                avg_val_log_probs=avg_val_log_prob[-1],
-                avg_train_KLDs=avg_train_KLD[-1],
-                avg_val_KLDs=avg_val_KLD[-1],
-                grad=(grad[-1] if get_grad else None))
-
-            # Check if the average validation loss is the best
-            if avg_val_loss[-1][-1] < best_avg_val_loss:
-                best_avg_val_epoch = epoch
-                best_avg_val_loss = avg_val_loss[-1][-1]
-                # Save the model
-                self.save(best=True)
-            elif (epoch - best_avg_val_epoch + 1) == max_no_improvement:
-                self.write_log(f"No improvement after {max_no_improvement} epochs...")
-                break
-
-            # Save training progress
-            self.save(best=False)
-            self.save_training(avg_train_loss=avg_train_loss,
-                               avg_train_log_prob=avg_train_log_prob,
-                               avg_train_KLD=avg_train_KLD,
-                               grad=grad,
-                               avg_val_loss=avg_val_loss,
-                               avg_val_log_prob=avg_val_log_prob,
-                               avg_val_KLD=avg_val_KLD,
-                               best_avg_val_epoch=best_avg_val_epoch,
-                               best_avg_val_loss=best_avg_val_loss,
-                               current_epoch=epoch,
-                               epoch_time=epoch_time)
+                # Check if the average validation loss is the best
+                if avg_val_loss[model][-1][-1] < best_avg_val_loss[model]:
+                    best_avg_val_epoch[model] = epoch
+                    best_avg_val_loss[model] = avg_val_loss[model][-1][-1]
+                    # Save the model
+                    self.save(best=True)
+                elif (epoch - best_avg_val_epoch[model] + 1) == max_no_improvement:
+                    self.write_log(f"No improvement after {max_no_improvement} epochs...")
+                    break
 
         # Log training stats
         self.log_training(
-            best_epoch=best_avg_val_epoch,
-            training_time=sum(epoch_time),
+            best_avg_val_epoch=best_avg_val_epoch,
+            epoch_time=epoch_time,
             avg_train_loss=avg_train_loss,
             avg_val_loss=avg_val_loss,
             avg_train_log_prob=avg_train_log_prob,
@@ -270,6 +286,7 @@ class Evaluate:
                       avg_val_KLD,
                       best_avg_val_epoch,
                       best_avg_val_loss,
+                      current_model,
                       current_epoch,
                       epoch_time,
                       *,
@@ -287,6 +304,7 @@ class Evaluate:
             "avg_val_KLD": avg_val_KLD,
             "best_avg_val_epoch": best_avg_val_epoch,
             "best_avg_val_loss": best_avg_val_loss,
+            "current_model": current_model,
             "current_epoch": current_epoch,
             "epoch_time": epoch_time,
         }
@@ -340,24 +358,30 @@ class Evaluate:
         self.write_log(message)
 
     def log_training(self,
-                     best_epoch,
-                     training_time,
+                     best_avg_val_epoch,
+                     epoch_time,
                      avg_train_loss,
                      avg_val_loss,
                      avg_train_log_prob,
                      avg_val_log_prob):
-        avg_train_loss = np.stack(avg_train_loss)
-        avg_val_loss = np.stack(avg_val_loss)
-        avg_train_log_prob = np.stack(avg_train_log_prob)
-        avg_val_log_prob = np.stack(avg_val_log_prob)
+        epoch_time_per_model = np.array(epoch_time).sum(axis=1)
+        epoch_time_total = epoch_time_per_model.sum()
+
+        # Each of avg_train_loss, ..., avg_val_log_prob is a list of lists of NumPy arrays
+        # Only the last dimensions are guaranteed to be the same size
+        # For simplicity, only stack the list corresponding to the last model
+        avg_train_loss = np.stack(avg_train_loss[-1])
+        avg_val_loss = np.stack(avg_val_loss[-1])
+        avg_train_log_prob = np.stack(avg_train_log_prob[-1])
+        avg_val_log_prob = np.stack(avg_val_log_prob[-1])
 
         best_train_ELBO = -avg_train_loss[:, -1].min()
         best_val_ELBO = -avg_val_loss[:, -1].min()
         best_train_log_prob = avg_train_log_prob[:, -1].max()
         best_val_log_prob = avg_val_log_prob[:, -1].max()
 
-        message = f"Best epoch: {best_epoch}\t"\
-                  f"Training time: {training_time:.2f}s\t" \
+        message = f"Best epoch(s): {best_avg_val_epoch}\t"\
+                  f"Training time(s): {', '.join([f'{x:.2f}s' for x in epoch_time_per_model])} ({epoch_time_total:.2f}s)\t" \
                   f"Best ELBO: {best_train_ELBO:.3f} ({best_val_ELBO:.3f})\t" \
                   f"Best log prob: {best_train_log_prob:.3f} ({best_val_log_prob:.3f})"
 
@@ -380,63 +404,75 @@ class Evaluate:
                 with open(f"{self.path}.log", "w") as file:
                     file.write(f"{message}\n")
 
-    def plot_training_ELBO(self,
-            avg_train_loss,
-            avg_val_loss,
-            *,
-            avg_train_log_prob=None,
-            avg_val_log_prob=None):
-        avg_train_loss = np.stack(avg_train_loss)
-        avg_val_loss = np.stack(avg_val_loss)
-        if avg_train_log_prob:
-            avg_train_log_prob = np.stack(avg_train_log_prob)
-        if avg_val_log_prob:
-            avg_val_log_prob = np.stack(avg_val_log_prob)
+    def plot_training_ELBO(self, avg_train_loss, avg_val_loss, *, avg_train_log_prob=None, avg_val_log_prob=None):
+        avg_train_loss = [np.stack(x) for x in avg_train_loss]
+        avg_val_loss = [np.stack(x) for x in avg_val_loss]
+        if avg_train_log_prob is not None:
+            avg_train_log_prob = [np.stack(x) for x in avg_train_log_prob]
+        if avg_val_log_prob is not None:
+            avg_val_log_prob = [np.stack(x) for x in avg_val_log_prob]
+
+        models = len(avg_train_loss)
+        for model in range(models):
+            epochs, train_groups = avg_train_loss[model].shape
+            X = np.arange(1, epochs+1)
+
+            for g_i in range(train_groups):
+                train_loss_label = f"Train ELBO (Z<={g_i+1})"
+                train_log_prob_label = f"Train log-likelihood (Z<={g_i+1})"
+                if models > 1:
+                    train_loss_label = f"Train ELBO (Model {model+1}) (Z<={g_i+1})"
+                    train_log_prob_label = f"Train log-likelihood (Model {model+1}) (Z<={g_i+1})"
+
+                plt.plot(X, -avg_train_loss[model][:, g_i], label=train_loss_label)
+                if avg_train_log_prob:
+                    plt.plot(X, avg_train_log_prob[model][:, g_i], label=train_log_prob_label)
+
+            val_loss_label = "Val. ELBO" if models == 1 else f"Val. ELBO (Model {model+1})"
+            plt.plot(X, -avg_val_loss[model][:, 0], label=val_loss_label)
+            if avg_val_log_prob:
+                val_log_prob_label = "Val. log-likelihood" if models == 1 else f"Val. log-likelihood (Model {model+1})"
+                plt.plot(X, avg_val_log_prob[model][:, 0], label=val_log_prob_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. training/validation ELBO")
-        epochs, train_groups = avg_train_loss.shape
-        X = np.arange(1, epochs+1)
-
-        for g_i in range(train_groups):
-            plt.plot(X, -avg_train_loss[:, g_i], label=f"Train ELBO (Z<={g_i+1})")
-            if avg_train_log_prob:
-                plt.plot(X, avg_train_log_prob[:, g_i], label=f"Train log-likelihood (Z<={g_i+1})")
-
-        plt.plot(X, -avg_val_loss[:, 0], label="Validation ELBO")
-        if avg_val_log_prob:
-            plt.plot(X, avg_val_log_prob[:, 0], label="Validation log-likelihood")
-
         plt.legend()
         plt.savefig(f"{self.path}_ELBO.png")
         plt.show()
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
-        avg_train_KLD = np.stack(avg_train_KLD)
-        avg_val_KLD = np.stack(avg_val_KLD)
+        avg_train_KLD = [np.stack(x) for x in avg_train_KLD]
+        avg_val_KLD = [np.stack(x) for x in avg_val_KLD]
+
+        models = len(avg_train_KLD)
+        for model in range(models):
+            epochs, train_groups = avg_train_KLD[model].shape
+            X = np.arange(1, epochs+1)
+
+            for g_i in range(train_groups):
+                train_KLD_label = f"Train (Z{g_i+1})" if models == 1 else f"Train (Model {model+1}) (Z{g_i+1})"
+                plt.plot(X, avg_train_KLD[model][:, g_i], label=train_KLD_label)
+
+            val_KLD_label = "Validation" if models == 1 else f"Validation (Model {model+1})"
+            plt.plot(X, avg_val_KLD[model][:, 0], label=val_KLD_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. training/validation KL divergence")
-        epochs, train_groups = avg_train_KLD.shape
-        X = np.arange(1, epochs + 1)
-
-        for g_i in range(train_groups):
-            plt.plot(X, avg_train_KLD[:, g_i], label=f"Train (Z{g_i+1})")
-
-        plt.plot(X, avg_val_KLD[:, 0], label="Validation")
-
         plt.legend()
         plt.savefig(f"{self.path}_KLD.png")
         plt.show()
 
     def plot_grad(self, grad):
-        grad = np.stack(grad)
+        grad = [np.stack(x) for x in grad]
+
+        models = len(grad)
+        for model in range(models):
+            epochs, train_groups = grad[model].shape
+            X = np.arange(1, epochs+1)
+
+            for g_i in range(train_groups):
+                grad_label = f"Z{g_i+1}" if models == 1 else f"Model {model+1} Z{g_i+1}"
+                plt.plot(X, grad[model][:, g_i], label=grad_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. gradient norm")
-        epochs, train_groups = grad.shape
-        X = np.arange(1, epochs + 1)
-
-        for g_i in range(train_groups):
-            plt.plot(X, grad[:, g_i], label=f"Z{g_i+1}")
-
         plt.legend()
         plt.savefig(f"{self.path}_grad.png")
         plt.show()
