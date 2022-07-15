@@ -45,12 +45,12 @@ class Single(Method):
             # Get the encoder output
             x_enc = self.encoder(images)
 
-        for i in range(self.num_groups):
+        for group in range(self.num_groups):
             if self.step == "Multiple":
                 # Zero the parameter's gradients
                 self.optimiser_encoder.zero_grad()
-                self.optimiser_enc_to_lats[i].zero_grad()
-                self.optimiser_lats_to_dec[i].zero_grad()
+                self.optimiser_enc_to_lats[group].zero_grad()
+                self.optimiser_lats_to_dec[group].zero_grad()
                 self.optimiser_decoder.zero_grad()
 
                 # Forward
@@ -61,13 +61,13 @@ class Single(Method):
             mu = []
             logvar = []
 
-            for j in range(i):
+            for j in range(group):
                 with torch.no_grad():
                     mu_2, logvar_2 = self.enc_to_lats[j](x_enc)
                     mu.append(mu_2)
                     logvar.append(logvar_2)
 
-            mu_3, logvar_3 = self.enc_to_lats[i](x_enc)
+            mu_3, logvar_3 = self.enc_to_lats[group](x_enc)
             mu.append(mu_3)
             logvar.append(logvar_3)
 
@@ -82,11 +82,15 @@ class Single(Method):
             batch_size = images.shape[0]
             z_dec = torch.zeros(batch_size, 49)
 
-            for j in range(i):
+            for j in range(group):
                 with torch.no_grad():
-                    z_dec = z_dec + self.lats_to_dec[j](z[:, j:j+self.num_latents_group])
+                    start = j * self.num_latents_group
+                    end = (j * self.num_latents_group) + self.num_latents_group
+                    z_dec = z_dec + self.lats_to_dec[j](z[:, start:end])
 
-            z_dec = z_dec + self.lats_to_dec[i](z[:, i:i+self.num_latents_group])
+            start = group * self.num_latents_group
+            end = (group * self.num_latents_group) + self.num_latents_group
+            z_dec = z_dec + self.lats_to_dec[group](z[:, start:end])
 
             logits = self.decoder(z_dec)
 
@@ -108,7 +112,7 @@ class Single(Method):
             if get_grad:
                 grad = []
 
-                for x in [self.encoder, self.enc_to_lats[i], self.lats_to_dec[i], self.decoder]:
+                for x in [self.encoder, self.enc_to_lats[group], self.lats_to_dec[group], self.decoder]:
                     for name, param in x.named_parameters():
                         grad.append(param.grad.abs().flatten())
 
@@ -117,8 +121,8 @@ class Single(Method):
             if self.step == "Multiple":
                 # Step
                 self.optimiser_encoder.step()
-                self.optimiser_enc_to_lats[i].step()
-                self.optimiser_lats_to_dec[i].step()
+                self.optimiser_enc_to_lats[group].step()
+                self.optimiser_lats_to_dec[group].step()
                 self.optimiser_decoder.step()
 
         if self.step == "Single":
@@ -211,11 +215,27 @@ class Single(Method):
 
     @torch.no_grad()
     def z_to_logits(self, z):
-        z_dec = self.lats_to_dec[0](z[:, 0:self.num_latents_group])
+        z_dec = self.z_to_z_dec(z[:, 0:self.num_latents_group], 0)
 
         for i in range(1, self.num_groups):
-            z_dec = z_dec + self.lats_to_dec[i](z[:, i:i+self.num_latents_group])
+            start = i * self.num_latents_group
+            end = (i * self.num_latents_group) + self.num_latents_group
+            z_dec = z_dec + self.z_to_z_dec(z[:, start:end], i)
 
-        logits = self.decoder(z_dec)
+        logits = self.z_dec_to_logits(z_dec)
 
         return z_dec, logits
+
+    @torch.no_grad()
+    def z_to_z_dec(self, z, group):
+        return self.lats_to_dec[group](z)
+
+    @torch.no_grad()
+    def z_dec_to_logits(self, z_dec):
+        return self.decoder(z_dec)
+
+    def get_num_latents_group(self):
+        return self.num_latents_group
+
+    def get_num_groups(self):
+        return self.num_groups

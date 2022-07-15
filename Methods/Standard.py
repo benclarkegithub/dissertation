@@ -68,3 +68,6 @@ class Standard(Method):
     @torch.no_grad()
     def z_to_logits(self, z):
         return self.VAE.z_to_logits(z)
+
+    def get_num_groups(self):
+        return self.num_groups
