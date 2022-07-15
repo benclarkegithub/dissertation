@@ -30,7 +30,7 @@ class Evaluate:
         training_progress = self.load_training()
 
         # Determine the number of models to train
-        models = 1 if self.method.get_type() == "Single" else self.method.get_num_latents_group()
+        models = 1 if self.method.get_type() == "Single" else self.method.get_num_groups()
 
         if training_progress is None:
             # If this is the first time training, log a summary of the model(s)
@@ -64,7 +64,7 @@ class Evaluate:
 
         for model in range(current_model, models):
             if self.method.get_type() == "Multiple":
-                self.write_log(f"Training model {model+1}/{models+1}...")
+                self.write_log(f"Training model {model+1}/{models}...")
 
             for epoch in range(current_epoch+1, max_epochs+1):
                 # Train the model and get the average training loss
@@ -105,7 +105,11 @@ class Evaluate:
                 avg_val_KLD_2 = []
 
                 for i, data in enumerate(val_loader):
-                    output, losses, log_probs, KLDs = self.method.test(i=i, data=data)
+                    # If the method has multiple models pass the model number
+                    if self.method.get_type() == "Single":
+                        output, losses, log_probs, KLDs = self.method.test(i=i, data=data)
+                    else:
+                        output, losses, log_probs, KLDs = self.method.test(i=i, data=data, model=model)
                     avg_val_loss_2.append(losses)
                     avg_val_log_prob_2.append(log_probs)
                     avg_val_KLD_2.append(KLDs)
@@ -168,7 +172,14 @@ class Evaluate:
         if get_grad:
             self.plot_grad(grad=grad)
 
-    def test(self, test_loader, *, avg_var=True, output_images=True, output_images_opt=None):
+    def test(self,
+             test_loader,
+             *,
+             avg_var=True,
+             output_images=True,
+             output_images_opt=None,
+             conceptual_compression=True,
+             conceptual_compression_opt=None):
         # Try and load the best model
         self.load(best=True, verbose=True)
 
@@ -176,7 +187,6 @@ class Evaluate:
             # Calculate mu, var, z mean and variance
             mu = None
             logvar = None
-            z = None
 
             for i, data in enumerate(test_loader):
                 output, loss, log_prob, KLD = self.method.test(i=i, data=data)
@@ -184,11 +194,9 @@ class Evaluate:
                 if (i == 0):
                     mu = output["mu"]
                     logvar = output["logvar"]
-                    z = output["z"]
                 else:
                     mu = torch.vstack([mu, output["mu"]])
                     logvar = torch.vstack([logvar, output["logvar"]])
-                    z = torch.vstack([z, output["z"]])
 
             var = torch.exp(logvar)
             avg_mu = mu.mean(dim=0)
@@ -256,6 +264,86 @@ class Evaluate:
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
                 plt.savefig(f"{self.path}_Output_Images_z{z_i+1}_z{z_i+2}.png")
                 plt.show()
+
+        # This is only compatible with the Single method
+        if conceptual_compression:
+            if not conceptual_compression_opt:
+                # Set conceptual compression options if it doesn't exist
+                conceptual_compression_opt = { "number": 8, "size": 28, "random": True }
+
+            # Get conceptual compression options
+            number = conceptual_compression_opt["number"]
+            size = conceptual_compression_opt["size"]
+            random_opt = conceptual_compression_opt["random"]
+            rows = (1 + self.method.get_num_groups()) # Original and each group
+            columns = number
+            height = size * rows
+            width = size * columns
+
+            # Get the data
+            data = next(iter(test_loader))
+            images, labels = data
+
+            # Start making grid of images
+            images = images[:number].unsqueeze(dim=1).reshape(number, 1, size, size)
+
+            # Get the output
+            output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+            mu = output["mu"]
+
+            def get_images_from_order(images, order):
+                images_temp = images.detach().clone()
+                z_dec = None
+
+                for group in order:
+                    # For each group, we need to get z_dec and pass it to the decoder
+                    # Start is inclusive, end is not
+                    start = group * self.method.get_num_latents_group()
+                    end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
+
+                    if z_dec is None:
+                        z_dec = self.method.z_to_z_dec(mu[:number, start:end], group=group)
+                    else:
+                        z_dec = z_dec + self.method.z_to_z_dec(mu[:number, start:end], group=group)
+
+                    # Add to grid of images
+                    logits = self.method.z_dec_to_logits(z_dec)
+                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, 1, size, size)
+                    images_temp = torch.vstack([images_temp, logits_images])
+
+                return images_temp
+
+            order = range(self.method.get_num_groups())
+            images_temp = get_images_from_order(images, order)
+
+            def images_to_graph(images, order, random):
+                # Make grid of images
+                images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+                # Create and display the 2D graph
+                title = f"{type(self.method).__name__} {self.experiment} conceptual compression"
+                if random:
+                    title += " (random order)"
+                plt.title(title)
+                # 0.95 is a hack to make the graph look good
+                x_ticks = (np.linspace(start=0, stop=width, num=number) + (size // 2)) * 0.95
+                y_ticks = (np.linspace(start=height, stop=0, num=self.method.get_num_groups()+1) + (size // 2)) * 0.95
+                x_labels = [x.item() for x in labels[:number]]
+                y_labels = [f"Z{i+1}" for i in order[::-1]] + ["Original"]
+                plt.xticks(ticks=x_ticks, labels=x_labels)
+                plt.yticks(ticks=y_ticks, labels=y_labels)
+                plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+                plt.savefig(f"{self.path}_Conceptual_Compression.png")
+                plt.show()
+
+            images_to_graph(images_temp, order, False)
+
+            if random_opt:
+                # Get random order
+                order = [x for x in range(self.method.get_num_groups())]
+                random.shuffle(order)
+                images_temp = get_images_from_order(images, order)
+                images_to_graph(images_temp, order, True)
 
     def save(self, best, verbose=False):
         path = self.path + "_Best" if best else self.path
@@ -364,8 +452,8 @@ class Evaluate:
                      avg_val_loss,
                      avg_train_log_prob,
                      avg_val_log_prob):
-        epoch_time_per_model = np.array(epoch_time).sum(axis=1)
-        epoch_time_total = epoch_time_per_model.sum()
+        epoch_time_per_model = [sum(x) for x in epoch_time]
+        epoch_time_total = sum(epoch_time_per_model)
 
         # Each of avg_train_loss, ..., avg_val_log_prob is a list of lists of NumPy arrays
         # Only the last dimensions are guaranteed to be the same size
@@ -440,8 +528,8 @@ class Evaluate:
         plt.show()
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
+        # Training
         avg_train_KLD = [np.stack(x) for x in avg_train_KLD]
-        avg_val_KLD = [np.stack(x) for x in avg_val_KLD]
 
         models = len(avg_train_KLD)
         for model in range(models):
@@ -449,15 +537,28 @@ class Evaluate:
             X = np.arange(1, epochs+1)
 
             for g_i in range(train_groups):
-                train_KLD_label = f"Train (Z{g_i+1})" if models == 1 else f"Train (Model {model+1}) (Z{g_i+1})"
+                train_KLD_label = f"Z{g_i+1}" if models == 1 else f"Model {model+1} Z{g_i+1}"
                 plt.plot(X, avg_train_KLD[model][:, g_i], label=train_KLD_label)
 
-            val_KLD_label = "Validation" if models == 1 else f"Validation (Model {model+1})"
+        plt.title(f"{type(self.method).__name__} {self.experiment} avg. training KL divergence")
+        plt.legend()
+        plt.savefig(f"{self.path}_KLD_train.png")
+        plt.show()
+
+        # Validation
+        avg_val_KLD = [np.stack(x) for x in avg_val_KLD]
+
+        models = len(avg_val_KLD)
+        for model in range(models):
+            epochs, train_groups = avg_val_KLD[model].shape
+            X = np.arange(1, epochs + 1)
+
+            val_KLD_label = "Validation" if models == 1 else f"Model {model+1}"
             plt.plot(X, avg_val_KLD[model][:, 0], label=val_KLD_label)
 
-        plt.title(f"{type(self.method).__name__} {self.experiment} avg. training/validation KL divergence")
+        plt.title(f"{type(self.method).__name__} {self.experiment} avg. validation KL divergence")
         plt.legend()
-        plt.savefig(f"{self.path}_KLD.png")
+        plt.savefig(f"{self.path}_KLD_val.png")
         plt.show()
 
     def plot_grad(self, grad):
