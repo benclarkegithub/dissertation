@@ -21,7 +21,7 @@ class Evaluate:
     def seed_everything(self, seed):
         # https://pytorch.org/docs/stable/notes/randomness.html
         torch.manual_seed(seed)
-        random.seed(seed)
+        # random.seed(seed)
         np.random.seed(seed)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
@@ -333,7 +333,11 @@ class Evaluate:
                 plt.xticks(ticks=x_ticks, labels=x_labels)
                 plt.yticks(ticks=y_ticks, labels=y_labels)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(f"{self.path}_Conceptual_Compression.png")
+                if not random:
+                    path = f"{self.path}_Conceptual_Compression.png"
+                else:
+                    path = f"{self.path}_Conceptual_Compression_Random.png"
+                plt.savefig(path)
                 plt.show()
 
             images_to_graph(images_temp, order, False)
