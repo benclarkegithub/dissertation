@@ -233,9 +233,3 @@ class Single(Method):
     @torch.no_grad()
     def z_dec_to_logits(self, z_dec):
         return self.decoder(z_dec)
-
-    def get_num_latents_group(self):
-        return self.num_latents_group
-
-    def get_num_groups(self):
-        return self.num_groups

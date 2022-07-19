@@ -21,7 +21,7 @@ class Evaluate:
     def seed_everything(self, seed):
         # https://pytorch.org/docs/stable/notes/randomness.html
         torch.manual_seed(seed)
-        # random.seed(seed)
+        random.seed(seed)
         np.random.seed(seed)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
@@ -269,12 +269,13 @@ class Evaluate:
         if conceptual_compression:
             if not conceptual_compression_opt:
                 # Set conceptual compression options if it doesn't exist
-                conceptual_compression_opt = { "number": 8, "size": 28, "random": True }
+                conceptual_compression_opt = { "number": 8, "size": 28, "random": True, "separate": True }
 
             # Get conceptual compression options
             number = conceptual_compression_opt["number"]
             size = conceptual_compression_opt["size"]
             random_opt = conceptual_compression_opt["random"]
+            separate = conceptual_compression_opt["separate"]
             rows = (1 + self.method.get_num_groups()) # Original and each group
             columns = number
             height = size * rows
@@ -293,37 +294,61 @@ class Evaluate:
 
             def get_images_from_order(images, order):
                 images_temp = images.detach().clone()
-                z_dec = None
+                z_decs = []
+                groups = []
 
                 for group in order:
-                    # For each group, we need to get z_dec and pass it to the decoder
+                    # For each group, we need to get z_decs and pass it to the decoder
                     # Start is inclusive, end is not
                     start = group * self.method.get_num_latents_group()
                     end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
 
-                    if z_dec is None:
-                        z_dec = self.method.z_to_z_dec(mu[:number, start:end], group=group)
+                    if self.method.get_type() == "Single":
+                        if not len(z_decs):
+                            z_decs.append(self.method.z_to_z_dec(mu[:number, start:end], group=group))
+                        else:
+                            z_decs[0] = z_decs[0] + self.method.z_to_z_dec(mu[:number, start:end], group=group)
+
+                        logits = self.method.z_dec_to_logits(z_decs[0])
                     else:
-                        z_dec = z_dec + self.method.z_to_z_dec(mu[:number, start:end], group=group)
+                        z_decs.append(self.method.z_to_z_dec(mu[:number, start:end], group=group))
+                        groups.append(group)
+
+                        logits = self.method.z_decs_to_logits(z_decs, groups)
 
                     # Add to grid of images
-                    logits = self.method.z_dec_to_logits(z_dec)
                     logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, 1, size, size)
                     images_temp = torch.vstack([images_temp, logits_images])
 
                 return images_temp
 
-            order = range(self.method.get_num_groups())
-            images_temp = get_images_from_order(images, order)
+            def get_separate_images_from_order(images, order):
+                images_temp = images.detach().clone()
 
-            def images_to_graph(images, order, random):
+                for group in order:
+                    # For each group, we need to get z_decs and pass it to the decoder
+                    # Start is inclusive, end is not
+                    start = group * self.method.get_num_latents_group()
+                    end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
+
+                    z_dec = self.method.z_to_z_dec(mu[:number, start:end], group=group)
+
+                    if self.method.get_type() == "Single":
+                        logits = self.method.z_dec_to_logits(z_dec)
+                    else:
+                        logits = self.method.z_decs_to_logits([z_dec], [group])
+
+                    # Add to grid of images
+                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, 1, size, size)
+                    images_temp = torch.vstack([images_temp, logits_images])
+
+                return images_temp
+
+            def images_to_graph(images, order, title, path):
                 # Make grid of images
                 images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
 
                 # Create and display the 2D graph
-                title = f"{type(self.method).__name__} {self.experiment} conceptual compression"
-                if random:
-                    title += " (random order)"
                 plt.title(title)
                 # 0.95 is a hack to make the graph look good
                 x_ticks = (np.linspace(start=0, stop=width, num=number) + (size // 2)) * 0.95
@@ -333,21 +358,40 @@ class Evaluate:
                 plt.xticks(ticks=x_ticks, labels=x_labels)
                 plt.yticks(ticks=y_ticks, labels=y_labels)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                if not random:
-                    path = f"{self.path}_Conceptual_Compression.png"
-                else:
-                    path = f"{self.path}_Conceptual_Compression_Random.png"
                 plt.savefig(path)
                 plt.show()
 
-            images_to_graph(images_temp, order, False)
+            order = range(self.method.get_num_groups())
+            images_temp = get_images_from_order(images, order)
+            images_to_graph(
+                images_temp,
+                order,
+                f"{type(self.method).__name__} {self.experiment} conceptual compression",
+                f"{self.path}_Conceptual_Compression.png"
+            )
 
             if random_opt:
                 # Get random order
                 order = [x for x in range(self.method.get_num_groups())]
                 random.shuffle(order)
                 images_temp = get_images_from_order(images, order)
-                images_to_graph(images_temp, order, True)
+                images_to_graph(
+                    images_temp,
+                    order,
+                    f"{type(self.method).__name__} {self.experiment} conceptual compression (random order)",
+                    f"{self.path}_Conceptual_Compression_Random.png"
+                )
+
+            if separate:
+                # Get separate images
+                order = range(self.method.get_num_groups())
+                images_temp = get_separate_images_from_order(images, order)
+                images_to_graph(
+                    images_temp,
+                    order,
+                    f"{type(self.method).__name__} {self.experiment} conceptual compression (separate)",
+                    f"{self.path}_Conceptual_Compression_Separate.png"
+                )
 
     def save(self, best, verbose=False):
         path = self.path + "_Best" if best else self.path

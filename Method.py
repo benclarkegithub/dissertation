@@ -6,6 +6,8 @@ import torch
 class Method(ABC):
     def __init__(self, num_latents, type):
         self.num_latents = num_latents
+        self.num_latents_group = 1
+        self.num_groups = num_latents // self.num_latents_group
         self.type = type
 
     @abstractmethod
@@ -36,8 +38,28 @@ class Method(ABC):
     def z_to_logits(self, z):
         pass
 
+    @abstractmethod
+    def z_to_z_dec(self, z, group):
+        pass
+
+    # Type is "Single"
+    # @abstractmethod
+    # def z_dec_to_logits(self, z_dec):
+    #     pass
+
+    # Type is "Multiple"
+    # @abstractmethod
+    # def z_decs_to_logits(self, z_dec):
+    #     pass
+
     def get_num_latents(self):
         return self.num_latents
+
+    def get_num_latents_group(self):
+        return self.num_latents_group
+
+    def get_num_groups(self):
+        return self.num_groups
 
     def get_type(self):
         return self.type

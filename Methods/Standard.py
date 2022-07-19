@@ -9,7 +9,7 @@ class Standard(Method):
     def __init__(self, VAE, num_latents):
         super().__init__(num_latents=num_latents, type="Single")
 
-        self.VAE = VAE(num_latents)
+        self.VAE = VAE(num_latents, self.num_latents_group)
         self.optimiser = optim.Adam(self.VAE.parameters(), lr=1e-3) # 0.001
 
     def train(self, i, data, *, get_grad=False):
@@ -69,5 +69,10 @@ class Standard(Method):
     def z_to_logits(self, z):
         return self.VAE.z_to_logits(z)
 
-    def get_num_groups(self):
-        return self.num_groups
+    @torch.no_grad()
+    def z_to_z_dec(self, z, group):
+        return self.VAE.z_to_z_dec(z, group)
+
+    @torch.no_grad()
+    def z_dec_to_logits(self, z_dec):
+        return self.VAE.z_dec_to_logits(z_dec)

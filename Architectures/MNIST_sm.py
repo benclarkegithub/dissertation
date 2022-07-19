@@ -76,5 +76,5 @@ class Decoder(nn.Module):
 
 
 class VAE(VAE2):
-    def __init__(self, num_latents):
-        super().__init__(num_latents, Encoder, EncoderToLatents, LatentsToDecoder, Decoder)
+    def __init__(self, num_latents, num_latents_group=None):
+        super().__init__(num_latents, num_latents_group, Encoder, EncoderToLatents, LatentsToDecoder, Decoder)
