@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-
 import torch
-
+from torch import nn
 
 class Method(ABC):
     def __init__(self, num_latents, type):
@@ -64,11 +63,18 @@ class Method(ABC):
     def get_type(self):
         return self.type
 
-    def ELBO(self, logits, x, mu, logvar, *, beta=1):
-        CB_log_prob = self.CB_log_prob_fn(logits, x)
+    def ELBO(self, logits, x, mu, logvar, *, log_prob_fn="CB", beta=1, std=0.05):
+        if log_prob_fn == "CB":
+            log_prob = self.CB_log_prob_fn(logits, x)
+        elif log_prob_fn == "N":
+            log_prob = self.N_log_prob_fn(logits, x, std=std)
+        else: # log_prob_fn == "MSE"
+            # MSE needs to be multipled by -1 because the methods use gradient ascent
+            log_prob = -self.MSE_fn(logits, x)
+
         KLD = self.KLD_fn(mu, logvar)
 
-        return (CB_log_prob - (beta * KLD)).mean(), CB_log_prob.mean(), KLD.mean()
+        return (log_prob - (beta * KLD)).mean(), log_prob.mean(), KLD.mean()
 
     def CB_log_prob_fn(self, logits, x):
         # The continuous Bernoulli: fixing a pervasive error in variational autoencoders, Loaiza-Ganem G and Cunningham
@@ -77,6 +83,20 @@ class Method(ABC):
         CB_log_prob = CB.log_prob(x).sum(dim=-1)
 
         return CB_log_prob
+
+    def N_log_prob_fn(self, logits, x, *, std=0.05):
+        images = torch.sigmoid(logits)
+        N = torch.distributions.Normal(images, std)
+        N_log_prob = N.log_prob(x).sum(dim=-1)
+
+        return N_log_prob
+
+    def MSE_fn(self, logits, x):
+        images = torch.sigmoid(logits)
+        MSE = (images - x) ** 2
+        MSE_sum = MSE.sum(dim=-1)
+
+        return MSE_sum
 
     def KLD_fn(self, mu, logvar):
         return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)

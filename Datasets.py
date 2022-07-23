@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import random
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ import torchvision.transforms as transforms
 from Utils import seed_worker
 
 
-class Dataset(ABC):
+class Dataset:
     def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
         self.root = root
         self.batch_size = batch_size
@@ -31,21 +30,17 @@ class Dataset(ABC):
         self.g = torch.Generator()
         self.g.manual_seed(seed)
 
-    @abstractmethod
     def get_train_loader(self):
-        pass
+        return self.train_loader
 
-    @abstractmethod
     def get_val_loader(self):
-        pass
+        return self.val_loader
 
-    @abstractmethod
     def get_test_loader(self):
-        pass
+        return self.test_loader
 
-    @abstractmethod
     def get_labels(self):
-        pass
+        return self.labels
 
 
 class MNIST(Dataset):
@@ -71,14 +66,26 @@ class MNIST(Dataset):
         # Index to label
         self.labels = [str(x) for x in range(10)]
 
-    def get_train_loader(self):
-        return self.train_loader
 
-    def get_val_loader(self):
-        return self.val_loader
+class CIFAR10(Dataset):
+    def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
+        super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
 
-    def get_test_loader(self):
-        return self.test_loader
+        # Get datasets
+        train_dataset = torchvision.datasets.CIFAR10(
+            root=self.root, train=True, download=True, transform=self.transform)
+        test_dataset = torchvision.datasets.CIFAR10(
+            root=self.root, train=False, download=True, transform=self.transform)
 
-    def get_labels(self):
-        return self.labels
+        # Split train and validation sets
+        train_set, val_set = torch.utils.data.random_split(
+            train_dataset, [self.train_set_size, self.val_set_size])
+
+        # Load train, validation, and test sets
+        self.train_loader = torch.utils.data.DataLoader(
+            train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
+        self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+
+        # Index to label
+        self.labels = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]

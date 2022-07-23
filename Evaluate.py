@@ -176,6 +176,8 @@ class Evaluate:
              test_loader,
              *,
              avg_var=True,
+             reconstruction=True,
+             reconstruction_opt=None,
              output_images=True,
              output_images_opt=None,
              conceptual_compression=True,
@@ -224,15 +226,57 @@ class Evaluate:
             # Log message
             self.write_log(message)
 
+        if reconstruction:
+            if not reconstruction_opt:
+                # Set reconstruction options if it doesn't exist
+                reconstruction_opt = { "number": 10, "size": 28, "channels": 1 }
+
+            number = reconstruction_opt["number"]
+            size = reconstruction_opt["size"]
+            channels = reconstruction_opt["channels"]
+
+            # Get the data
+            data = next(iter(test_loader))
+            images, labels = data
+
+            # Start making grid of images
+            if channels == 1:
+                images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
+            else:
+                images = images[:number].reshape(number, channels, size, size)
+
+            # Get the output
+            output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+            mu = output["mu"]
+
+            _, logits = self.method.z_to_logits(mu[:number])
+
+            # Add to grid of images
+            if channels == 1:
+                logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+            else:
+                logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
+
+            images = torch.vstack([images, logits_images])
+
+            # Make grid of images
+            images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+            plt.title(f"{type(self.method).__name__} {self.experiment} reconstruction")
+            plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+            plt.savefig(f"{self.path}_Reconstruction.png")
+            plt.show()
+
         if output_images:
             if not output_images_opt:
                 # Set output images options if it doesn't exist
-                output_images_opt = { "range": 2.5, "number": 11, "size": 28 }
+                output_images_opt = { "range": 2.5, "number": 11, "size": 28, "channels": 1 }
 
             # Get output images options
             range_opt = output_images_opt["range"]
             number = output_images_opt["number"]
             size = output_images_opt["size"]
+            channels = output_images_opt["channels"]
             total_number = number ** 2
             total_size = number * size
 
@@ -250,7 +294,10 @@ class Evaluate:
                 z_dec, logits = self.method.z_to_logits(Z_input)
 
                 # Make grid of images
-                images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, 1, size, size)
+                if channels == 1:
+                    images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, channels, size, size)
+                else:
+                    images = torch.sigmoid(logits).reshape(total_number, channels, size, size)
                 images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
 
                 # Create and display the 2D graph
@@ -269,11 +316,12 @@ class Evaluate:
         if conceptual_compression:
             if not conceptual_compression_opt:
                 # Set conceptual compression options if it doesn't exist
-                conceptual_compression_opt = { "number": 8, "size": 28, "random": True, "separate": True }
+                conceptual_compression_opt = { "number": 8, "size": 28, "channels": 1, "random": True, "separate": True }
 
             # Get conceptual compression options
             number = conceptual_compression_opt["number"]
             size = conceptual_compression_opt["size"]
+            channels = conceptual_compression_opt["channels"]
             random_opt = conceptual_compression_opt["random"]
             separate = conceptual_compression_opt["separate"]
             rows = (1 + self.method.get_num_groups()) # Original and each group
@@ -286,7 +334,10 @@ class Evaluate:
             images, labels = data
 
             # Start making grid of images
-            images = images[:number].unsqueeze(dim=1).reshape(number, 1, size, size)
+            if channels == 1:
+                images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
+            else:
+                images = images[:number].reshape(number, channels, size, size)
 
             # Get the output
             output, loss, log_prob, KLD = self.method.test(i=0, data=data)
@@ -317,7 +368,10 @@ class Evaluate:
                         logits = self.method.z_decs_to_logits(z_decs, groups)
 
                     # Add to grid of images
-                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, 1, size, size)
+                    if channels == 1:
+                        logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+                    else:
+                        logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
                     images_temp = torch.vstack([images_temp, logits_images])
 
                 return images_temp
@@ -339,7 +393,10 @@ class Evaluate:
                         logits = self.method.z_decs_to_logits([z_dec], [group])
 
                     # Add to grid of images
-                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, 1, size, size)
+                    if channels == 1:
+                        logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+                    else:
+                        logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
                     images_temp = torch.vstack([images_temp, logits_images])
 
                 return images_temp

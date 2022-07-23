@@ -6,11 +6,15 @@ from Method import Method
 
 
 class Standard(Method):
-    def __init__(self, VAE, num_latents):
+    def __init__(self, VAE, num_latents, *, image_size=28, num_channels=1, log_prob_fn="CB", std=0.05):
         super().__init__(num_latents=num_latents, type="Single")
 
         self.VAE = VAE(num_latents, self.num_latents_group)
         self.optimiser = optim.Adam(self.VAE.parameters(), lr=1e-3) # 0.001
+        self.image_size = image_size
+        self.num_channels = num_channels
+        self.log_prob_fn = log_prob_fn
+        self.std = std
 
     def train(self, i, data, *, get_grad=False):
         # Get the input images
@@ -21,7 +25,13 @@ class Standard(Method):
 
         # Forward, backward, loss
         output = self.VAE(images)
-        loss, log_prob, KLD = self.ELBO(output["logits"], images.view(-1, 28 * 28), output["mu"], output["logvar"])
+        loss, log_prob, KLD = self.ELBO(
+            output["logits"],
+            images.view(-1, self.num_channels * (self.image_size**2)),
+            output["mu"],
+            output["logvar"],
+            log_prob_fn=self.log_prob_fn,
+            std=self.std)
         # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
         loss = -loss
         loss.backward()
@@ -45,10 +55,18 @@ class Standard(Method):
     def test(self, i, data):
         # Get the input images
         images, _ = data
+
         # Get the output
         output = self.VAE(images)
+
         # Calculate loss
-        loss, log_prob, KLD = self.ELBO(output["logits"], images.view(-1, 28 * 28), output["mu"], output["logvar"])
+        loss, log_prob, KLD = self.ELBO(
+            output["logits"],
+            images.view(-1, self.num_channels * (self.image_size**2)),
+            output["mu"],
+            output["logvar"],
+            log_prob_fn=self.log_prob_fn,
+            std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]
 

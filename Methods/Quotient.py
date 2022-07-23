@@ -8,11 +8,23 @@ from Method import Method
 
 
 class Quotient(Method):
-    def __init__(self, architecture, num_latents, num_latents_group):
+    def __init__(self,
+                 architecture,
+                 num_latents,
+                 num_latents_group,
+                 *,
+                 image_size=28,
+                 num_channels=1,
+                 log_prob_fn="CB",
+                 std=0.05):
         super().__init__(num_latents=num_latents, type="Single")
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
+        self.image_size = image_size
+        self.num_channels = num_channels
+        self.log_prob_fn = log_prob_fn
+        self.std = std
 
         self.encoder = architecture["Encoder"]()
         self.enc_to_lats = [architecture["EncoderToLatents"](num_latents_group) for _ in range(self.num_groups)]
@@ -89,7 +101,13 @@ class Quotient(Method):
             outputs.append(logits_reshaped)
 
             # Loss, backward
-            loss, log_prob, KLD = self.ELBO(logits, images.view(-1, 28 * 28), mus, logvars)
+            loss, log_prob, KLD = self.ELBO(
+                logits,
+                images.view(-1, self.num_channels * (self.image_size**2)),
+                mus,
+                logvars,
+                log_prob_fn=self.log_prob_fn,
+                std=self.std)
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
             loss.backward(retain_graph=True)
@@ -173,7 +191,13 @@ class Quotient(Method):
         }
 
         # Calculate loss
-        loss, log_prob, KLD = self.ELBO(logits_reshaped, images.view(-1, 28 * 28), mus, logvars)
+        loss, log_prob, KLD = self.ELBO(
+            logits_reshaped,
+            images.view(-1, self.num_channels * (self.image_size**2)),
+            mus,
+            logvars,
+            log_prob_fn=self.log_prob_fn,
+            std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]
 
