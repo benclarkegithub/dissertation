@@ -12,8 +12,9 @@ class Single(Method):
                  num_latents_group,
                  *,
                  step="Multiple",
-                 image_size=28,
-                 num_channels=1,
+                 size=28,
+                 channels=1,
+                 out_channels=None,
                  log_prob_fn="CB",
                  std=0.05):
         super().__init__(num_latents=num_latents, type="Single")
@@ -21,15 +22,17 @@ class Single(Method):
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
         self.step = step
-        self.image_size = image_size
-        self.num_channels = num_channels
+        self.size = size
+        self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
 
-        self.encoder = architecture["Encoder"]()
-        self.enc_to_lats = [architecture["EncoderToLatents"](num_latents_group) for _ in range(self.num_groups)]
-        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents_group) for _ in range(self.num_groups)]
-        self.decoder = architecture["Decoder"]()
+        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
+        self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
+                            for _ in range(self.num_groups)]
+        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
+                            for _ in range(self.num_groups)]
+        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
 
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3) # 0.001
         self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-3) for x in self.enc_to_lats] # 0.001
@@ -110,7 +113,7 @@ class Single(Method):
             # Loss, backward
             loss, log_prob, KLD = self.ELBO(
                 logits,
-                images.view(-1, self.num_channels * (self.image_size**2)),
+                images.view(-1, self.channels * (self.size ** 2)),
                 mu_3,
                 logvar_3,
                 log_prob_fn=self.log_prob_fn,
@@ -181,7 +184,7 @@ class Single(Method):
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(
             logits,
-            images.view(-1, self.num_channels * (self.image_size**2)),
+            images.view(-1, self.channels * (self.size ** 2)),
             mu,
             logvar,
             log_prob_fn=self.log_prob_fn,

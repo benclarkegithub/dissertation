@@ -3,17 +3,27 @@ from torch import nn
 
 
 class VAE(nn.Module):
-    def __init__(self, num_latents, num_latents_group, Encoder, EncoderToLatents, LatentsToDecoder, Decoder):
+    def __init__(self,
+                 num_latents,
+                 num_latents_group,
+                 Encoder,
+                 EncoderToLatents,
+                 LatentsToDecoder,
+                 Decoder,
+                 *,
+                 size=28,
+                 channels=1,
+                 out_channels=None):
         super().__init__()
 
         self.num_latents = num_latents
         self.num_latents_group = num_latents if num_latents_group is None else num_latents_group
         self.num_groups = num_latents // self.num_latents_group
 
-        self.encoder = Encoder()
-        self.enc_to_lat = [EncoderToLatents(self.num_latents_group) for _ in range(self.num_groups)]
-        self.lat_to_dec = [LatentsToDecoder(self.num_latents_group) for _ in range(self.num_groups)]
-        self.decoder = Decoder()
+        self.encoder = Encoder(num_latents, size, channels, out_channels)
+        self.enc_to_lat = [EncoderToLatents(num_latents, self.num_latents_group) for _ in range(self.num_groups)]
+        self.lat_to_dec = [LatentsToDecoder(num_latents, self.num_latents_group) for _ in range(self.num_groups)]
+        self.decoder = Decoder(num_latents, size, channels, out_channels)
 
     def forward(self, x, *, reparameterise=True):
         # x to x_enc, mu, logvar

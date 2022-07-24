@@ -6,13 +6,13 @@ from Method import Method
 
 
 class Standard(Method):
-    def __init__(self, VAE, num_latents, *, image_size=28, num_channels=1, log_prob_fn="CB", std=0.05):
+    def __init__(self, VAE, num_latents, *, size=28, channels=1, out_channels=None, log_prob_fn="CB", std=0.05):
         super().__init__(num_latents=num_latents, type="Single")
 
-        self.VAE = VAE(num_latents, self.num_latents_group)
+        self.VAE = VAE(num_latents, self.num_latents_group, size=size, channels=channels, out_channels=out_channels)
         self.optimiser = optim.Adam(self.VAE.parameters(), lr=1e-3) # 0.001
-        self.image_size = image_size
-        self.num_channels = num_channels
+        self.size = size
+        self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
 
@@ -27,7 +27,7 @@ class Standard(Method):
         output = self.VAE(images)
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
-            images.view(-1, self.num_channels * (self.image_size**2)),
+            images.view(-1, self.channels * (self.size ** 2)),
             output["mu"],
             output["logvar"],
             log_prob_fn=self.log_prob_fn,
@@ -62,7 +62,7 @@ class Standard(Method):
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
-            images.view(-1, self.num_channels * (self.image_size**2)),
+            images.view(-1, self.channels * (self.size ** 2)),
             output["mu"],
             output["logvar"],
             log_prob_fn=self.log_prob_fn,

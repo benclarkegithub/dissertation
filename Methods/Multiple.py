@@ -28,8 +28,9 @@ class Multiple(Method):
                  num_latents_group,
                  variant,
                  *,
-                 image_size=28,
-                 num_channels=1,
+                 size=28,
+                 channels=1,
+                 out_channels=None,
                  log_prob_fn="CB",
                  std=0.05):
         super().__init__(num_latents=num_latents, type="Multiple")
@@ -37,12 +38,13 @@ class Multiple(Method):
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
         self.variant = variant
-        self.image_size = image_size
-        self.num_channels = num_channels
+        self.size = size
+        self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
 
-        self.VAEs = [VAE(num_latents_group) for _ in range(self.num_groups)]
+        self.VAEs = [VAE(num_latents, self.num_latents_group, size=size, channels=channels, out_channels=out_channels)
+                     for _ in range(self.num_groups)]
         self.optimisers = [optim.Adam(x.parameters(), lr=1e-3) for x in self.VAEs] # 0.001
 
     def train(self, i, data, *, get_grad=None, model=None):
@@ -98,7 +100,7 @@ class Multiple(Method):
         # Backward
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
-            target_output_images.view(-1, self.num_channels * (self.image_size**2)),
+            target_output_images.view(-1, self.channels * (self.size ** 2)),
             output["mu"],
             output["logvar"],
             log_prob_fn=self.log_prob_fn,
@@ -161,14 +163,14 @@ class Multiple(Method):
 
         # Get the final output
         # In training the target output is not clipped
-        final_output = torch.zeros_like(images.view(-1, self.num_channels * (self.image_size**2)))
+        final_output = torch.zeros_like(images.view(-1, self.channels * (self.size ** 2)))
         for output in outputs:
-            final_output = final_output + output.view(-1, self.num_channels * (self.image_size**2))
+            final_output = final_output + output.view(-1, self.channels * (self.size ** 2))
 
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(
             final_output,
-            images_clipped.view(-1, self.num_channels * (self.image_size**2)),
+            images_clipped.view(-1, self.channels * (self.size ** 2)),
             mu,
             logvar,
             log_prob_fn=self.log_prob_fn,
