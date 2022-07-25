@@ -96,7 +96,7 @@ class Single(Method):
             z = mu + (std * eps)
 
             batch_size = images.shape[0]
-            z_dec = torch.zeros(batch_size, 49)
+            z_dec = torch.zeros(batch_size, self.num_latents * 4)
 
             for j in range(group):
                 with torch.no_grad():
