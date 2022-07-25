@@ -13,18 +13,18 @@ cifar10 = CIFAR10(
     root="../../Data" , batch_size=BATCH_SIZE, train_set_size=TRAIN_SET_SIZE, val_set_size=VAL_SET_SIZE, seed=SEED)
 
 NUM_LATENTS = 128
-IMAGE_SIZE = 32
-NUM_CHANNELS = 3
-NUM_OUT_CHANNELS = 16
+SIZE = 32
+CHANNELS = 3
+OUT_CHANNELS = 16
 LOG_PROB_FN = "N"
 STD = 0.05
 
 method = Standard(
     VAE=VAE,
     num_latents=NUM_LATENTS,
-    image_size=IMAGE_SIZE,
-    num_channels=NUM_CHANNELS,
-    num_out_channels=NUM_OUT_CHANNELS,
+    size=SIZE,
+    channels=CHANNELS,
+    out_channels=OUT_CHANNELS,
     log_prob_fn=LOG_PROB_FN,
     std=STD)
 
@@ -41,10 +41,10 @@ evaluate.train(
     max_no_improvement=MAX_NO_IMPROVEMENT)
 
 # Test model
-reconstruction_opt = { "number": 10, "size": IMAGE_SIZE, "channels": NUM_CHANNELS }
-output_images_opt = { "range": 10, "number": 11, "size": IMAGE_SIZE, "channels": NUM_CHANNELS }
+reconstruction_opt = { "number": 10, "size": SIZE, "channels": CHANNELS }
+output_images_opt = { "range": 10, "number": 11, "size": SIZE, "channels": CHANNELS }
 conceptual_compression_opt = {
-    "number": 10, "size": IMAGE_SIZE, "channels": NUM_CHANNELS, "random": True, "separate": True }
+    "number": 10, "size": SIZE, "channels": CHANNELS, "random": True, "separate": True }
 
 evaluate.test(
     test_loader=cifar10.get_test_loader(),
