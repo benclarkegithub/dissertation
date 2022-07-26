@@ -63,7 +63,7 @@ class Method(ABC):
     def get_type(self):
         return self.type
 
-    def ELBO(self, logits, x, mu, logvar, *, log_prob_fn="CB", beta=1, std=0.05):
+    def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05):
         if log_prob_fn == "CB":
             log_prob = self.CB_log_prob_fn(logits, x)
         elif log_prob_fn == "N":
@@ -72,7 +72,10 @@ class Method(ABC):
             # MSE needs to be multipled by -1 because the methods use gradient ascent
             log_prob = -self.MSE_fn(logits, x)
 
-        KLD = self.KLD_fn(mu, logvar)
+        if KLD_fn == "N":
+            KLD = self.KLD_fn(mu, logvar)
+        else: # KLD_fn == "Custom"
+            KLD = self.KLD_Custom_fn(log_p, log_q)
 
         return (log_prob - (beta * KLD)).mean(), log_prob.mean(), KLD.mean()
 
@@ -98,5 +101,8 @@ class Method(ABC):
 
         return MSE_sum
 
-    def KLD_fn(self, mu, logvar):
+    def KLD_N_fn(self, mu, logvar):
         return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)
+
+    def KLD_Custom_fn(self, log_p, log_q):
+        return (log_q.exp() * (log_q - log_p)).sum(dim=-1)

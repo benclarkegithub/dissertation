@@ -101,9 +101,10 @@ class Multiple(Method):
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
             target_output_images.view(-1, self.channels * (self.size ** 2)),
-            output["mu"],
-            output["logvar"],
             log_prob_fn=self.log_prob_fn,
+            KLD_fn="N",
+            mu=output["mu"],
+            logvar=output["logvar"],
             std=self.std)
         # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
         loss = -loss
@@ -171,9 +172,10 @@ class Multiple(Method):
         loss, log_prob, KLD = self.ELBO(
             final_output,
             images_clipped.view(-1, self.channels * (self.size ** 2)),
-            mu,
-            logvar,
             log_prob_fn=self.log_prob_fn,
+            KLD_fn="N",
+            mu=mu,
+            logvar=logvar,
             std=self.std)
 
         # Commented out for now

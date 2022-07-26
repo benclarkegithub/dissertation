@@ -28,9 +28,10 @@ class Standard(Method):
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
             images.view(-1, self.channels * (self.size ** 2)),
-            output["mu"],
-            output["logvar"],
             log_prob_fn=self.log_prob_fn,
+            KLD_fn="N",
+            mu=output["mu"],
+            logvar=output["logvar"],
             std=self.std)
         # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
         loss = -loss
@@ -63,9 +64,10 @@ class Standard(Method):
         loss, log_prob, KLD = self.ELBO(
             output["logits"],
             images.view(-1, self.channels * (self.size ** 2)),
-            output["mu"],
-            output["logvar"],
             log_prob_fn=self.log_prob_fn,
+            KLD_fn="N",
+            mu=output["mu"],
+            logvar=output["logvar"],
             std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]

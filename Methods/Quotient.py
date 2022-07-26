@@ -60,9 +60,9 @@ class Quotient(Method):
         # Get the encoder output
         x_enc = self.encoder(images)
 
-        mus = None
-        logvars = None
         zs = None
+        log_ps = None
+        log_qs = None
         outputs = []
 
         for group in range(self.num_groups):
@@ -74,20 +74,21 @@ class Quotient(Method):
                 output_images = torch.sigmoid(outputs[-1])
                 x_enc_rec = self.encoder(output_images)
                 mu_2, logvar_2 = self.enc_to_lats[group](x_enc_rec)
-                mu_3, logvar_3, quotient = self.quotient_distribution(mu_1, logvar_1, mu_2, logvar_2)
-
-            mus = torch.cat([mus, mu_3], dim=1) if mus is not None else mu_1
-            logvars = torch.cat([logvars, logvar_3], dim=1) if logvars is not None else logvar_1
-
-            # Reparameterise
-            if len(outputs) > 0:
-                z = quotient.rsample()
+                z, q = self.mu_logvar_to_z_and_quotient(mu_1, logvar_1, mu_2, logvar_2)
                 zs = torch.cat([zs, z], dim=1)
+                log_p = Normal(0, 1).log_prob(z)
+                log_ps = torch.cat([log_ps, log_p], dim=1)
+                log_qs = torch.cat([log_qs, q.log()], dim=1)
             else:
+                mus = mu_1
+                logvars = logvar_1
                 std = torch.exp(0.5 * logvars)
                 eps = torch.randn_like(std)
                 z = mus + (std * eps)
                 zs = z
+                log_p = Normal(0, 1).log_prob(z)
+                log_ps = log_p
+                log_qs = Normal(mu_1, logvar_1.exp().sqrt()).log_prob(z)
 
             # Get z_dec
             z_dec = self.lats_to_dec[0](zs[:, 0:self.num_latents_group])
@@ -107,9 +108,10 @@ class Quotient(Method):
             loss, log_prob, KLD = self.ELBO(
                 logits,
                 images.view(-1, self.channels * (self.size ** 2)),
-                mus,
-                logvars,
                 log_prob_fn=self.log_prob_fn,
+                KLD_fn="Custom",
+                log_p=log_ps,
+                log_q=log_qs,
                 std=self.std)
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
@@ -149,8 +151,9 @@ class Quotient(Method):
         # Get the encoder output
         x_enc = self.encoder(images)
 
-        mus = None
-        logvars = None
+        zs = None
+        log_ps = None
+        log_qs = None
         outputs = []
 
         for group in range(self.num_groups):
@@ -162,18 +165,29 @@ class Quotient(Method):
                 output_images = torch.sigmoid(outputs[-1])
                 x_enc_rec = self.encoder(output_images)
                 mu_2, logvar_2 = self.enc_to_lats[group](x_enc_rec)
-                mu_3, logvar_3, quotient = self.quotient_distribution(mu_1, logvar_1, mu_2, logvar_2)
-
-            mus = torch.cat([mus, mu_3], dim=1) if mus is not None else mu_1
-            logvars = torch.cat([logvars, logvar_3], dim=1) if logvars is not None else logvar_1
+                z, q = self.mu_logvar_to_z_and_quotient(mu_1, logvar_1, mu_2, logvar_2)
+                zs = torch.cat([zs, z], dim=1)
+                log_p = Normal(0, 1).log_prob(z)
+                log_ps = torch.cat([log_ps, log_p], dim=1)
+                log_qs = torch.cat([log_qs, q.log()], dim=1)
+            else:
+                mus = mu_1
+                logvars = logvar_1
+                std = torch.exp(0.5 * logvars)
+                eps = torch.randn_like(std)
+                z = mus + (std * eps)
+                zs = z
+                log_p = Normal(0, 1).log_prob(z)
+                log_ps = log_p
+                log_qs = Normal(mu_1, logvar_1.exp().sqrt()).log_prob(z)
 
             # Can't use `z_to_logits` here because it assumes a fully-dimensional z
-            z_dec = self.z_to_z_dec(mus[:, 0:self.num_latents_group], 0)
+            z_dec = self.z_to_z_dec(zs[:, 0:self.num_latents_group], 0)
 
             for i in range(1, group+1):
                 start = i * self.num_latents_group
                 end = (i * self.num_latents_group) + self.num_latents_group
-                z_dec = z_dec + self.z_to_z_dec(mus[:, start:end], i)
+                z_dec = z_dec + self.z_to_z_dec(zs[:, start:end], i)
 
             logits = self.z_dec_to_logits(z_dec)
 
@@ -197,9 +211,10 @@ class Quotient(Method):
         loss, log_prob, KLD = self.ELBO(
             logits_reshaped,
             images.view(-1, self.channels * (self.size ** 2)),
-            mus,
-            logvars,
             log_prob_fn=self.log_prob_fn,
+            KLD_fn="Custom",
+            log_p=log_ps,
+            log_q=log_qs,
             std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]
@@ -260,10 +275,31 @@ class Quotient(Method):
     def z_dec_to_logits(self, z_dec):
         return self.decoder(z_dec)
 
-    def quotient_distribution(self, mu_1, logvar_1, mu_2, logvar_2):
-        var_1 = logvar_1.exp()
-        var_2 = var_1.detach() + F.softplus(logvar_2.exp() - var_1.detach())
-        var = 1 / (1 / var_1 - 1 / var_2)
-        mu = var * ((mu_1 / var_1) - (mu_2 / var_2))
+    # https://rstudio-pubs-static.s3.amazonaws.com/287838_7c982110ffe44d1eb5184739c5724926.html
+    def mu_logvar_to_z_and_quotient(self, mu_1, logvar_1, mu_2, logvar_2):
+        std_1, std_2 = logvar_1.exp().sqrt(), logvar_2.exp().sqrt()
 
-        return mu, var.log(), Normal(mu, var.sqrt())
+        N_1, N_2 = Normal(mu_1, std_1), Normal(mu_2, std_2)
+        z = N_1.rsample() / N_2.rsample()
+
+        b = mu_1 / mu_2
+        p = std_2 / std_1
+        d_y = std_2 / mu_2
+
+        return z, self.quotient_distribution(z, b, p, d_y)
+
+    def quotient_distribution(self, z, b, p, d_y):
+        frac_1 = p / (torch.pi * (1 + ((p ** 2) * (z ** 2))))
+
+        frac_2_sum_1 = torch.exp(-(((p ** 2) * (b ** 2)) + 1) / (2 * (d_y ** 2)))
+
+        q = (1 + (b * (p ** 2) * z)) / (d_y * torch.sqrt(1 + ((p ** 2) * (z ** 2))))
+        frac_2_sum_2_1 = torch.sqrt(torch.tensor(torch.pi / 2)) * q * torch.erf(q / torch.sqrt(torch.tensor(2)))
+        frac_2_sum_2_2 = torch.exp(-((p ** 2) * ((z - b) ** 2)) / (2 * (d_y ** 2) * (1 + ((p ** 2) * (z ** 2)))))
+        frac_2_sum_2 = frac_2_sum_2_1 * frac_2_sum_2_2
+
+        frac_2 = frac_2_sum_1 + frac_2_sum_2
+
+        frac = frac_1 * frac_2
+
+        return frac
