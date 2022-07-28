@@ -5,6 +5,18 @@ from torch.nn import functional as F
 from Architectures.VAE import VAE as VAE2
 
 
+class Canvas(nn.Module):
+    def __init__(self, size, channels):
+        super().__init__()
+
+        self.fc = nn.Linear(1, channels * (size ** 2), bias=False)
+
+    def forward(self, x):
+        x = self.fc(x)
+
+        return x
+
+
 class Encoder(nn.Module):
     def __init__(self, num_latents, size, channels, out_channels):
         super().__init__()

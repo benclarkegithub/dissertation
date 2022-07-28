@@ -73,7 +73,7 @@ class Method(ABC):
             log_prob = -self.MSE_fn(logits, x)
 
         if KLD_fn == "N":
-            KLD = self.KLD_fn(mu, logvar)
+            KLD = self.KLD_N_fn(mu, logvar)
         else: # KLD_fn == "Custom"
             KLD = self.KLD_Custom_fn(log_p, log_q)
 
@@ -105,4 +105,4 @@ class Method(ABC):
         return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)
 
     def KLD_Custom_fn(self, log_p, log_q):
-        return (log_q.exp() * (log_q - log_p)).sum(dim=-1)
+        return (log_q - log_p).sum(dim=-1)
