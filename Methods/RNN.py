@@ -7,16 +7,21 @@ from Method import Method
 
 """
 encoders
-    True: Use two encoders, one for the images and one for the reconstruction
-    False: Use one encoder, for both the images and the reconstruction
-
+    True:   Use two encoders, one for the images and one for the reconstruction
+    False:  Use one encoder, for both the images and the reconstruction
+    
+encoder_encoder_to_encoder
+    True:   Combine the image and reconstruction encodings into one encoding
+    False:  Do not combine the encodings, get a separate distribution for the images and reconstruction and combine them
+            together with LatentsToLatents
+            
 encoder_to_latents
-    True: Many sets of parameters for encoding to latent variable(s)
-    False: One set of parameters for encoding to latent variable(s)
+    True:   Many sets of parameters for encoding to latent variable(s)
+    False:  One set of parameters for encoding to latent variable(s)
     
 resample:
-    True: Resample z at each step
-    False: Do not resample z at each step (reuse previous zs)
+    True:   Resample z at each step
+    False:  Do not resample z at each step (reuse previous zs)
 """
 class RNN(Method):
     def __init__(self,
@@ -25,6 +30,7 @@ class RNN(Method):
                  num_latents_group,
                  # Options
                  encoders,
+                 encoder_encoder_to_encoder,
                  encoder_to_latents,
                  resample,
                  *,
@@ -43,6 +49,7 @@ class RNN(Method):
         self.std = std
         # Options
         self.encoders = encoders
+        self.encoder_encoder_to_encoder = encoder_encoder_to_encoder
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
 
@@ -50,13 +57,15 @@ class RNN(Method):
         self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
         if self.encoders:
             self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels)
-        self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents)
+        if self.encoder_encoder_to_encoder:
+            self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents)
         if not self.encoder_to_latents:
             self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
         else:
             self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
                                 for _ in range(self.num_groups)]
-        self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group)
+        if not self.encoder_encoder_to_encoder:
+            self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group)
         self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
                             for _ in range(self.num_groups)]
         self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
@@ -65,12 +74,14 @@ class RNN(Method):
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3) # 0.001
         if self.encoders:
             self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=1e-3) # 0.001
-        self.optimiser_enc_enc_to_enc = optim.Adam(self.enc_enc_to_enc.parameters(), lr=1e-3)
+        if self.encoder_encoder_to_encoder:
+            self.optimiser_enc_enc_to_enc = optim.Adam(self.enc_enc_to_enc.parameters(), lr=1e-3)
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-3) # 0.001
         else:
             self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-3) for x in self.enc_to_lats] # 0.001
-        self.optimiser_lats_to_lats = optim.Adam(self.lats_to_lats.parameters(), lr=1e-3)
+        if not self.encoder_encoder_to_encoder:
+            self.optimiser_lats_to_lats = optim.Adam(self.lats_to_lats.parameters(), lr=1e-3)
         self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-3) for x in self.lats_to_dec] # 0.001
         self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-3) # 0.001
 
@@ -102,10 +113,22 @@ class RNN(Method):
         # Forward
         # Get encoder output of images
         x_enc_images = self.encoder(images)
-        # if (self.variant == "Default") or (self.variant == "NoResample"):
-        #     mu_images, logvar_images = self.enc_to_lat(x_enc_images)
-        # else:
-        #     mu_images, logvar_images = self.enc_to_lats[0](x_enc_images)
+
+        mu_images = None
+        logvar_images = None
+        if not self.encoder_encoder_to_encoder:
+            # Get the image distribution to combine it later with the LatentsToLatents component
+            if not self.encoder_to_latents:
+                mu_images, logvar_images = self.enc_to_lat(x_enc_images)
+            else:
+                mu_images, logvar_images = [], []
+
+                for enc_to_lat in self.enc_to_lats:
+                    mu_images_1, logvar_images_1 = enc_to_lat(x_enc_images)
+                    mu_images.append(mu_images_1)
+                    logvar_images.append(logvar_images_1)
+
+                mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
 
         # Get the blank canvas
         ones = torch.ones(images.shape[0], 1)
@@ -125,13 +148,28 @@ class RNN(Method):
                 x_enc_rec = self.encoder_2(output_images)
             else:
                 x_enc_rec = self.encoder(output_images)
-            x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
+
+            # Combine the image and reconstruction encodings or use the reconstruction encoding
+            x_enc_temp = self.enc_enc_to_enc(x_enc_images, x_enc_rec) if self.encoder_encoder_to_encoder else x_enc_rec
             if not self.encoder_to_latents:
-                mu_1, logvar_1 = self.enc_to_lat(x_enc)
+                mu_1, logvar_1 = self.enc_to_lat(x_enc_temp)
             else:
-                mu_1, logvar_1 = self.enc_to_lats[group](x_enc)
-            mu = torch.cat([mu, mu_1], dim=1) if mu is not None else mu_1
-            logvar = torch.cat([logvar, logvar_1], dim=1) if logvar is not None else logvar_1
+                mu_1, logvar_1 = self.enc_to_lats[group](x_enc_temp)
+
+            if not self.encoder_encoder_to_encoder:
+                # Use the LatentsToLatents component to get a combined images and reconstruction distribution
+                if not self.encoder_to_latents:
+                    mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
+                else:
+                    start = group * self.num_latents_group
+                    end = (group * self.num_latents_group) + self.num_latents_group
+                    mu_2, logvar_2 = self.lats_to_lats(
+                        mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
+            else:
+                mu_2, logvar_2 = mu_1, logvar_1
+
+            mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
+            logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2
 
             # Reparameterise
             std = torch.exp(0.5 * logvar)
@@ -221,10 +259,23 @@ class RNN(Method):
         # Forward
         # Get encoder output of images
         x_enc_images = self.encoder(images)
-        if not self.encoder_to_latents:
-            mu_images, logvar_images = self.enc_to_lat(x_enc_images)
-        else:
-            mu_images, logvar_images = self.enc_to_lats[0](x_enc_images)
+
+        mu_images = None
+        logvar_images = None
+        if not self.encoder_encoder_to_encoder:
+            # Get the image distribution to combine it later with the LatentsToLatents component
+            if not self.encoder_to_latents:
+                mu_images, logvar_images = self.enc_to_lat(x_enc_images)
+            else:
+                mu_images, logvar_images = [], []
+
+                for enc_to_lat in self.enc_to_lats:
+                    mu_images_1, logvar_images_1 = enc_to_lat(x_enc_images)
+                    mu_images.append(mu_images_1)
+                    logvar_images.append(logvar_images_1)
+
+                mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
+
         # Get the blank canvas
         ones = torch.ones(images.shape[0], 1)
         canvas = self.canvas(ones)
@@ -244,14 +295,30 @@ class RNN(Method):
                 x_enc_rec = self.encoder_2(output_images)
             else:
                 x_enc_rec = self.encoder(output_images)
-            x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
-            if not self.encoder_to_latents:
-                mu_1, logvar_1 = self.enc_to_lat(x_enc)
-            else:
-                mu_1, logvar_1 = self.enc_to_lats[group](x_enc)
-            mu = torch.cat([mu, mu_1], dim=1) if mu is not None else mu_1
-            logvar = torch.cat([logvar, logvar_1], dim=1) if logvar is not None else logvar_1
 
+            # Combine the image and reconstruction encodings or use the reconstruction encoding
+            x_enc_temp = self.enc_enc_to_enc(x_enc_images, x_enc_rec) if self.encoder_encoder_to_encoder else x_enc_rec
+            if not self.encoder_to_latents:
+                mu_1, logvar_1 = self.enc_to_lat(x_enc_temp)
+            else:
+                mu_1, logvar_1 = self.enc_to_lats[group](x_enc_temp)
+
+            if not self.encoder_encoder_to_encoder:
+                # Use the LatentsToLatents component to get a combined images and reconstruction distribution
+                if not self.encoder_to_latents:
+                    mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
+                else:
+                    start = group * self.num_latents_group
+                    end = (group * self.num_latents_group) + self.num_latents_group
+                    mu_2, logvar_2 = self.lats_to_lats(
+                        mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
+            else:
+                mu_2, logvar_2 = mu_1, logvar_1
+
+            mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
+            logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2
+
+            # The ELBO might be higher when testing because z is set to its expected value
             z = mu
 
             if not self.resample:
@@ -279,7 +346,7 @@ class RNN(Method):
 
         # THIS IS WRONG, WON'T WORK AS EXPECTED!
         output = {
-            "x_enc": x_enc,
+            "x_enc": x_enc_temp,
             "mu": mu,
             "logvar": logvar,
             # "z": z,
@@ -304,13 +371,15 @@ class RNN(Method):
         torch.save(self.encoder.state_dict(), f"{path}.pth")
         if self.encoders:
             torch.save(self.encoder_2.state_dict(), f"{path}_enc_2.pth")
-        torch.save(self.enc_enc_to_enc.state_dict(), f"{path}_enc_enc_to_enc.pth")
+        if self.encoder_encoder_to_encoder:
+            torch.save(self.enc_enc_to_enc.state_dict(), f"{path}_enc_enc_to_enc.pth")
         if not self.encoder_to_latents:
             torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
         else:
             for i, x in enumerate(self.enc_to_lats):
                 torch.save(x.state_dict(), f"{path}_enc_to_lats_{i}.pth")
-        torch.save(self.lats_to_lats.state_dict(), f"{path}_lats_to_lats.pth")
+        if not self.encoder_encoder_to_encoder:
+            torch.save(self.lats_to_lats.state_dict(), f"{path}_lats_to_lats.pth")
         for i, x in enumerate(self.lats_to_dec):
             torch.save(x.state_dict(), f"{path}_lat_to_dec_{i}.pth")
         torch.save(self.decoder.state_dict(), f"{path}_dec.pth")
@@ -320,13 +389,15 @@ class RNN(Method):
         self.encoder.load_state_dict(torch.load(f"{path}.pth"))
         if self.encoders:
             self.encoder_2.load_state_dict(torch.load(f"{path}_enc_2.pth"))
-        self.enc_enc_to_enc.load_state_dict(torch.load(f"{path}_enc_enc_to_enc.pth"))
+        if self.encoder_encoder_to_encoder:
+            self.enc_enc_to_enc.load_state_dict(torch.load(f"{path}_enc_enc_to_enc.pth"))
         if not self.encoder_to_latents:
             self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
         else:
             for i, x in enumerate(self.enc_to_lats):
                 x.load_state_dict(torch.load(f"{path}_enc_to_lats_{i}.pth"))
-        self.lats_to_lats.load_state_dict(torch.load(f"{path}_lats_to_lats.pth"))
+        if not self.encoder_encoder_to_encoder:
+            self.lats_to_lats.load_state_dict(torch.load(f"{path}_lats_to_lats.pth"))
         for i, x in enumerate(self.lats_to_dec):
             x.load_state_dict(torch.load(f"{path}_lat_to_dec_{i}.pth"))
         self.decoder.load_state_dict(torch.load(f"{path}_dec.pth"))
@@ -338,8 +409,9 @@ class RNN(Method):
         if self.encoders:
             summaries.append("Encoder 2")
             summaries.append(str(summary(self.encoder_2)))
-        summaries.append("Encoder Encoder to Encoder")
-        summaries.append(str(summary(self.enc_enc_to_enc)))
+        if self.encoder_encoder_to_encoder:
+            summaries.append("Encoder Encoder to Encoder")
+            summaries.append(str(summary(self.enc_enc_to_enc)))
         if not self.encoder_to_latents:
             summaries.append(f"Encoder to Latent")
             summaries.append(str(summary(self.enc_to_lat)))
@@ -347,8 +419,9 @@ class RNN(Method):
             for i, x in enumerate(self.enc_to_lats):
                 summaries.append(f"Encoder to Latents {i}")
                 summaries.append(str(summary(x)))
-        summaries.append("Latents to Latents")
-        summaries.append(str(summary(self.lats_to_lats)))
+        if not self.encoder_encoder_to_encoder:
+            summaries.append("Latents to Latents")
+            summaries.append(str(summary(self.lats_to_lats)))
         for i, x in enumerate(self.lats_to_dec):
             summaries.append(f"Latents to Decoder {i}")
             summaries.append(str(summary(x)))

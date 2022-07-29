@@ -8,12 +8,12 @@ from Method import Method
 
 """
 encoder_to_latents
-    True: Many sets of parameters for encoding to latent variable(s)
-    False: One set of parameters for encoding to latent variable(s)
+    True:   Many sets of parameters for encoding to latent variable(s)
+    False:  One set of parameters for encoding to latent variable(s)
     
 resample:
-    True: Resample z at each step
-    False: Do not resample z at each step (reuse previous zs)
+    True:   Resample z at each step
+    False:  Do not resample z at each step (reuse previous zs)
 """
 class Quotient(Method):
     def __init__(self,
