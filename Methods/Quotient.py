@@ -7,18 +7,21 @@ from Method import Method
 
 
 """
-Variants:
-    Default: Single set of parameters for encoder to latents, resample z at each step
-    EncoderToLatents: Multiple sets of parameters for encoder to latents, resample z at each step
-    NoResample: Single set of parameters for encoder to latents, do not resample z at each step
-    Both: Multiple sets of parameters for encoder to latents, do not resample z at each step
+encoder_to_latents
+    True: Many sets of parameters for encoding to latent variable(s)
+    False: One set of parameters for encoding to latent variable(s)
+    
+resample:
+    True: Resample z at each step
+    False: Do not resample z at each step (reuse previous zs)
 """
 class Quotient(Method):
     def __init__(self,
                  architecture,
                  num_latents,
                  num_latents_group,
-                 variant,
+                 encoder_to_latents,
+                 resample,
                  *,
                  size=28,
                  channels=1,
@@ -33,11 +36,12 @@ class Quotient(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
-        self.variant = variant
+        self.encoder_to_latents = encoder_to_latents
+        self.resample = resample
 
         self.canvas = architecture["Canvas"](size, channels)
         self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
         else:
             self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
@@ -48,7 +52,7 @@ class Quotient(Method):
 
         self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-4) # 0.0001
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-4) # 0.0001
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-4) # 0.0001
         else:
             self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-4) for x in self.enc_to_lats] # 0.0001
@@ -67,7 +71,7 @@ class Quotient(Method):
         # Zero the parameter's gradients
         self.optimiser_canvas.zero_grad()
         self.optimiser_encoder.zero_grad()
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.zero_grad()
         else:
             for x in self.optimiser_enc_to_lats:
@@ -79,7 +83,7 @@ class Quotient(Method):
         # Forward
         # Get encoder output of images
         x_enc = self.encoder(images)
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             mu_images, logvar_images = self.enc_to_lat(x_enc)
         else:
             mu_images, logvar_images = [], []
@@ -108,7 +112,7 @@ class Quotient(Method):
             # Get encoder output of reconstruction
             output_images = torch.sigmoid(outputs[-1])
             x_enc_rec = self.encoder(output_images)
-            if (self.variant == "Default") or (self.variant == "NoResample"):
+            if not self.encoder_to_latents:
                 mu_rec, logvar_rec = self.enc_to_lat(x_enc_rec)
             else:
                 mu_rec, logvar_rec = self.enc_to_lats[group](x_enc_rec)
@@ -116,7 +120,7 @@ class Quotient(Method):
             logvar = torch.cat([logvar, logvar_rec], dim=1) if logvar is not None else logvar_rec
 
             # Reparameterise, get log_q and log_p
-            if (self.variant == "Default") or (self.variant == "NoResample"):
+            if not self.encoder_to_latents:
                 mu_images_temp = mu_images
                 logvar_images_temp = logvar_images
             else:
@@ -125,7 +129,7 @@ class Quotient(Method):
                 logvar_images_temp = logvar_images[:, :end]
             z, log_q = self.mu_logvar_to_z_and_log_q(mu_images_temp, logvar_images_temp, mu, logvar)
             log_p = self.z_mu_logvar_to_log_p(z, mu, logvar)
-            if (self.variant == "NoResample") or (self.variant == "Both"):
+            if not self.resample:
                 start = group * self.num_latents_group
                 end = (group * self.num_latents_group) + self.num_latents_group
                 zs = torch.cat([zs, z[:, start:end]], dim=1) if zs is not None else z
@@ -133,7 +137,7 @@ class Quotient(Method):
                 log_ps = torch.cat([log_ps, log_p[:, start:end]], dim=1) if log_ps is not None else log_p
 
             # Get z_dec
-            z_temp = z if (self.variant == "Default") or (self.variant == "EncoderToLatents") else zs
+            z_temp = z if self.resample else zs
             z_dec = self.lats_to_dec[0](z_temp[:, 0:self.num_latents_group])
 
             for group_i in range(1, group+1):
@@ -148,8 +152,8 @@ class Quotient(Method):
             outputs.append(logits_reshaped.detach())
 
             # Loss, backward
-            log_p_temp = log_p if (self.variant == "Default") or (self.variant == "EncoderToLatents") else log_ps
-            log_q_temp = log_q if (self.variant == "Default") or (self.variant == "EncoderToLatents") else log_qs
+            log_p_temp = log_p if self.resample else log_ps
+            log_q_temp = log_q if self.resample else log_qs
             loss, log_prob, KLD = self.ELBO(
                 logits,
                 images.view(-1, self.channels * (self.size ** 2)),
@@ -172,7 +176,7 @@ class Quotient(Method):
                 grad = []
 
                 enc_to_lat = None
-                if (self.variant == "Default") or (self.variant == "NoResample"):
+                if not self.encoder_to_latents:
                     enc_to_lat = self.enc_to_lat
                 else:
                     enc_to_lat = self.enc_to_lats[group]
@@ -186,7 +190,7 @@ class Quotient(Method):
         # Step
         self.optimiser_canvas.step()
         self.optimiser_encoder.step()
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.step()
         else:
             for x in self.optimiser_enc_to_lats:
@@ -205,7 +209,7 @@ class Quotient(Method):
         # Forward
         # Get encoder output of images
         x_enc = self.encoder(images)
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             mu_images, logvar_images = self.enc_to_lat(x_enc)
         else:
             mu_images, logvar_images = [], []
@@ -235,7 +239,7 @@ class Quotient(Method):
             # Get encoder output of reconstruction
             output_images = torch.sigmoid(outputs[-1])
             x_enc_rec = self.encoder(output_images)
-            if (self.variant == "Default") or (self.variant == "NoResample"):
+            if not self.encoder_to_latents:
                 mu_rec, logvar_rec = self.enc_to_lat(x_enc_rec)
             else:
                 mu_rec, logvar_rec = self.enc_to_lats[group](x_enc_rec)
@@ -243,7 +247,7 @@ class Quotient(Method):
             logvar = torch.cat([logvar, logvar_rec], dim=1) if logvar is not None else logvar_rec
 
             # Reparameterise, get log_q and log_p
-            if (self.variant == "Default") or (self.variant == "NoResample"):
+            if not self.encoder_to_latents:
                 mu_images_temp = mu_images
                 logvar_images_temp = logvar_images
             else:
@@ -252,7 +256,7 @@ class Quotient(Method):
                 logvar_images_temp = logvar_images[:, :end]
             z, log_q = self.mu_logvar_to_z_and_log_q(mu_images_temp, logvar_images_temp, mu, logvar)
             log_p = self.z_mu_logvar_to_log_p(z, mu, logvar)
-            if (self.variant == "NoResample") or (self.variant == "Both"):
+            if not self.resample:
                 start = group * self.num_latents_group
                 end = (group * self.num_latents_group) + self.num_latents_group
                 zs = torch.cat([zs, z[:, start:end]], dim=1) if zs is not None else z
@@ -260,7 +264,7 @@ class Quotient(Method):
                 log_ps = torch.cat([log_ps, log_p[:, start:end]], dim=1) if log_ps is not None else log_p
 
             # Can't use `z_to_logits` here because it assumes a fully-dimensional z
-            z_temp = z if (self.variant == "Default") or (self.variant == "EncoderToLatents") else zs
+            z_temp = z if self.resample else zs
             z_dec = self.z_to_z_dec(z_temp[:, 0:self.num_latents_group], 0)
 
             for i in range(1, group+1):
@@ -288,8 +292,8 @@ class Quotient(Method):
         }
 
         # Calculate loss
-        log_p_temp = log_p if (self.variant == "Default") or (self.variant == "EncoderToLatents") else log_ps
-        log_q_temp = log_q if (self.variant == "Default") or (self.variant == "EncoderToLatents") else log_qs
+        log_p_temp = log_p if self.resample else log_ps
+        log_q_temp = log_q if self.resample else log_qs
         loss, log_prob, KLD = self.ELBO(
             logits_reshaped,
             images.view(-1, self.channels * (self.size ** 2)),
@@ -304,7 +308,7 @@ class Quotient(Method):
     def save(self, path):
         torch.save(self.canvas.state_dict(), f"{path}_canvas.pth")
         torch.save(self.encoder.state_dict(), f"{path}.pth")
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
         else:
             for i, x in enumerate(self.enc_to_lats):
@@ -316,7 +320,7 @@ class Quotient(Method):
     def load(self, path):
         self.canvas.load_state_dict(torch.load(f"{path}_canvas.pth"))
         self.encoder.load_state_dict(torch.load(f"{path}.pth"))
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
         else:
             for i, x in enumerate(self.enc_to_lats):
@@ -329,7 +333,7 @@ class Quotient(Method):
         summaries = []
         summaries.append("Encoder")
         summaries.append(str(summary(self.encoder)))
-        if (self.variant == "Default") or (self.variant == "NoResample"):
+        if not self.encoder_to_latents:
             summaries.append(f"Encoder to Latent")
             summaries.append(str(summary(self.enc_to_lat)))
         else:
