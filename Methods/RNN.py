@@ -20,6 +20,10 @@ encoder_to_latents
     "One":      One set of parameters for encoding to latent variable(s)
     "Latents":  Many sets of parameters and condition Z_n on the combined image and reconstruction encoding and Z_<n
     
+backprop
+    True:   Backpropagate through Z_<=n at each step
+    False:  Only backpropagate through Z_n at each step
+    
 resample:
     True:   Resample z at each step
     False:  Do not resample z at each step (reuse previous zs)
@@ -33,6 +37,7 @@ class RNN(Method):
                  encoders,
                  encoder_encoder_to_encoder,
                  encoder_to_latents,
+                 backprop,
                  resample,
                  *,
                  size=28,
@@ -54,6 +59,7 @@ class RNN(Method):
         if (encoder_to_latents == "Latents") and not encoder_encoder_to_encoder:
             raise Exception("The EncoderLatentsToLatents component needs the EncoderEncoderToEncoder component.")
         self.encoder_to_latents = encoder_to_latents
+        self.backprop = backprop
         self.resample = resample
 
         # Canvas
@@ -192,8 +198,13 @@ class RNN(Method):
             else:
                 mu_2, logvar_2 = mu_1, logvar_1
 
-            mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
-            logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2
+            # Detach mu, logvar for Z_<n if backprop == False
+            if self.backprop:
+                mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
+                logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2
+            else:
+                mu = torch.cat([mu.detach(), mu_2], dim=1) if mu is not None else mu_2
+                logvar = torch.cat([logvar.detach(), logvar_2], dim=1) if logvar is not None else logvar_2
 
             # Reparameterise
             std = torch.exp(0.5 * logvar)
