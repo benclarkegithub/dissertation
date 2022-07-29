@@ -247,7 +247,7 @@ class RNN(Method):
             outputs.append(logits_reshaped)
 
         # Reshape the final output
-        logits_reshaped = outputs[-1].reshape(-1, 28 * 28)
+        logits_reshaped = outputs[-1].reshape(-1, self.channels * (self.size ** 2))
 
         # THIS IS WRONG, WON'T WORK AS EXPECTED!
         output = {
