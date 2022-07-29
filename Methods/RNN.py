@@ -1,12 +1,15 @@
 import torch
 import torch.optim as optim
-from torch.distributions import Normal
 from torchinfo import summary
 
 from Method import Method
 
 
 """
+encoders
+    True: Use two encoders, one for the images and one for the reconstruction
+    False: Use one encoder, for both the images and the reconstruction
+
 encoder_to_latents
     True: Many sets of parameters for encoding to latent variable(s)
     False: One set of parameters for encoding to latent variable(s)
@@ -20,6 +23,8 @@ class RNN(Method):
                  architecture,
                  num_latents,
                  num_latents_group,
+                 # Options
+                 encoders,
                  encoder_to_latents,
                  resample,
                  *,
@@ -36,11 +41,15 @@ class RNN(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        # Options
+        self.encoders = encoders
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
 
         self.canvas = architecture["Canvas"](size, channels)
         self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
+        if self.encoders:
+            self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels)
         self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents)
         if not self.encoder_to_latents:
             self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
@@ -54,6 +63,8 @@ class RNN(Method):
 
         self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-3) # 0.001
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3) # 0.001
+        if self.encoders:
+            self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=1e-3) # 0.001
         self.optimiser_enc_enc_to_enc = optim.Adam(self.enc_enc_to_enc.parameters(), lr=1e-3)
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-3) # 0.001
@@ -75,6 +86,8 @@ class RNN(Method):
         # Zero the parameter's gradients
         self.optimiser_canvas.zero_grad()
         self.optimiser_encoder.zero_grad()
+        if self.encoders:
+            self.optimiser_encoder_2.zero_grad()
         self.optimiser_enc_enc_to_enc.zero_grad()
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.zero_grad()
@@ -108,7 +121,10 @@ class RNN(Method):
         for group in range(self.num_groups):
             # Get encoder output of reconstruction
             output_images = torch.sigmoid(outputs[-1])
-            x_enc_rec = self.encoder(output_images)
+            if self.encoders:
+                x_enc_rec = self.encoder_2(output_images)
+            else:
+                x_enc_rec = self.encoder(output_images)
             x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
             if not self.encoder_to_latents:
                 mu_1, logvar_1 = self.enc_to_lat(x_enc)
@@ -170,7 +186,10 @@ class RNN(Method):
                 else:
                     enc_to_lat = self.enc_to_lats[group]
 
-                for x in [self.encoder, enc_to_lat, self.lats_to_dec[group], self.decoder]:
+                components = [self.encoder, enc_to_lat, self.lats_to_dec[group], self.decoder]
+                if self.encoders:
+                    components.append(self.encoder_2)
+                for x in components:
                     for name, param in x.named_parameters():
                         grad.append(param.grad.abs().flatten())
 
@@ -179,6 +198,8 @@ class RNN(Method):
         # Step
         self.optimiser_canvas.step()
         self.optimiser_encoder.step()
+        if self.encoders:
+            self.optimiser_encoder_2.step()
         self.optimiser_enc_enc_to_enc.step()
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.step()
@@ -219,7 +240,10 @@ class RNN(Method):
         for group in range(self.num_groups):
             # Get encoder output of reconstruction
             output_images = torch.sigmoid(outputs[-1])
-            x_enc_rec = self.encoder(output_images)
+            if self.encoders:
+                x_enc_rec = self.encoder_2(output_images)
+            else:
+                x_enc_rec = self.encoder(output_images)
             x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
             if not self.encoder_to_latents:
                 mu_1, logvar_1 = self.enc_to_lat(x_enc)
@@ -278,6 +302,8 @@ class RNN(Method):
     def save(self, path):
         torch.save(self.canvas.state_dict(), f"{path}_canvas.pth")
         torch.save(self.encoder.state_dict(), f"{path}.pth")
+        if self.encoders:
+            torch.save(self.encoder_2.state_dict(), f"{path}_enc_2.pth")
         torch.save(self.enc_enc_to_enc.state_dict(), f"{path}_enc_enc_to_enc.pth")
         if not self.encoder_to_latents:
             torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
@@ -292,6 +318,8 @@ class RNN(Method):
     def load(self, path):
         self.canvas.load_state_dict(torch.load(f"{path}_canvas.pth"))
         self.encoder.load_state_dict(torch.load(f"{path}.pth"))
+        if self.encoders:
+            self.encoder_2.load_state_dict(torch.load(f"{path}_enc_2.pth"))
         self.enc_enc_to_enc.load_state_dict(torch.load(f"{path}_enc_enc_to_enc.pth"))
         if not self.encoder_to_latents:
             self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
@@ -307,6 +335,9 @@ class RNN(Method):
         summaries = []
         summaries.append("Encoder")
         summaries.append(str(summary(self.encoder)))
+        if self.encoders:
+            summaries.append("Encoder 2")
+            summaries.append(str(summary(self.encoder_2)))
         summaries.append("Encoder Encoder to Encoder")
         summaries.append(str(summary(self.enc_enc_to_enc)))
         if not self.encoder_to_latents:
