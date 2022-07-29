@@ -74,14 +74,17 @@ class EncoderLatentsToLatents(nn.Module):
         super().__init__()
 
         # Fully-connected layers
-        encoder_plus_latents_size = (num_latents * 4) + (group * num_latents_group)
+        encoder_plus_latents_size = (num_latents * 4) + (group * num_latents_group * 2)
         self.fc1 = nn.Linear(encoder_plus_latents_size, encoder_plus_latents_size)
         self.fc_mean = nn.Linear(encoder_plus_latents_size, num_latents_group)
         self.fc_logvar = nn.Linear(encoder_plus_latents_size, num_latents_group)
 
     def forward(self, x, mu, logvar):
-        # (num_latents * 4) + (group * num_latents_group) -> (num_latents * 4) + (group * num_latents_group)
-        x = F.leaky_relu(self.fc1(torch.cat([x, mu, logvar], dim=1)))
+        # (num_latents * 4) + (group * num_latents_group * 2) -> (num_latents * 4) + (group * num_latents_group * 2)
+        if mu is not None:
+            x = F.leaky_relu(self.fc1(torch.cat([x, mu, logvar], dim=1)))
+        else:
+            x = F.leaky_relu(self.fc1(x))
         # (num_latents * 4) + (group * num_latents_group) -> num_latents_group
         mu = self.fc_mean(x)
         logvar = self.fc_logvar(x)

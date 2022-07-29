@@ -116,7 +116,8 @@ class RNN(Method):
         self.optimiser_encoder.zero_grad()
         if self.encoders:
             self.optimiser_encoder_2.zero_grad()
-        self.optimiser_enc_enc_to_enc.zero_grad()
+        if self.encoder_encoder_to_encoder:
+            self.optimiser_enc_enc_to_enc.zero_grad()
         if self.encoder_to_latents == "One":
             self.optimiser_enc_to_lat.zero_grad()
         elif self.encoder_to_latents == "Many":
@@ -127,7 +128,8 @@ class RNN(Method):
                 x.zero_grad()
         for x in self.optimiser_lats_to_dec:
             x.zero_grad()
-        self.optimiser_lats_to_lats.zero_grad()
+        if not self.encoder_encoder_to_encoder:
+            self.optimiser_lats_to_lats.zero_grad()
         self.optimiser_decoder.zero_grad()
 
         # Forward
@@ -158,7 +160,7 @@ class RNN(Method):
         mu = None
         logvar = None
         outputs = [canvas_reshaped]
-        # Used for "NoResample" and "Both" variants
+        # Used when resample == False
         zs = None
 
         for group in range(self.num_groups):
@@ -262,7 +264,8 @@ class RNN(Method):
         self.optimiser_encoder.step()
         if self.encoders:
             self.optimiser_encoder_2.step()
-        self.optimiser_enc_enc_to_enc.step()
+        if self.encoder_encoder_to_encoder:
+            self.optimiser_enc_enc_to_enc.step()
         if self.encoder_to_latents == "One":
             self.optimiser_enc_to_lat.step()
         elif self.encoder_to_latents == "Many":
@@ -273,7 +276,8 @@ class RNN(Method):
                 x.step()
         for x in self.optimiser_lats_to_dec:
             x.step()
-        self.optimiser_lats_to_lats.step()
+        if not self.encoder_encoder_to_encoder:
+            self.optimiser_lats_to_lats.step()
         self.optimiser_decoder.step()
 
         return losses, log_probs, KLDs, grads
@@ -312,7 +316,7 @@ class RNN(Method):
         logvar = None
         outputs = [canvas_reshaped]
         z_dec = None
-        # Used for "NoResample" and "Both" variants
+        # Used when resample == False
         zs = None
 
         for group in range(self.num_groups):
