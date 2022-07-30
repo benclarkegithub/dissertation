@@ -58,7 +58,7 @@ class Standard(Method):
         images, _ = data
 
         # Get the output
-        output = self.VAE(images)
+        output = self.VAE(images, reparameterise=False)
 
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(

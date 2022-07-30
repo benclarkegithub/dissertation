@@ -166,10 +166,8 @@ class Single(Method):
 
         x_enc, mu, logvar = self.x_to_mu_logvar(images)
 
-        # Should we reparameterise?
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        z = mu + (std * eps)
+        # The ELBO might be higher when testing because z is set to its expected value
+        z = mu
 
         z_dec, logits = self.z_to_logits(z)
 
