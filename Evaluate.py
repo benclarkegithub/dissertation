@@ -234,6 +234,7 @@ class Evaluate:
             number = reconstruction_opt["number"]
             size = reconstruction_opt["size"]
             channels = reconstruction_opt["channels"]
+            size_with_padding = size + 2
 
             # Get the data
             data = next(iter(test_loader))
@@ -263,6 +264,14 @@ class Evaluate:
             images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
 
             plt.title(f"{type(self.method).__name__} {self.experiment} reconstruction")
+            plt.xlabel("Label")
+            stop = (number * size_with_padding) - size_with_padding
+            x_ticks = np.linspace(start=0, stop=stop, num=number) + (size_with_padding // 2) + 1
+            y_ticks = np.linspace(start=size_with_padding, stop=0, num=2) + (size_with_padding // 2) + 1
+            x_labels = [x.item() for x in labels[:number]]
+            y_labels = ["Rec", "Original"]
+            plt.xticks(ticks=x_ticks, labels=x_labels)
+            plt.yticks(ticks=y_ticks, labels=y_labels)
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
             plt.savefig(f"{self.path}_Reconstruction.png")
             plt.show()
@@ -278,7 +287,8 @@ class Evaluate:
             size = output_images_opt["size"]
             channels = output_images_opt["channels"]
             total_number = number ** 2
-            total_size = number * size
+            size_with_padding = size + 2
+            total_size_with_padding = number * size_with_padding
 
             # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
             X = np.linspace(start=-range_opt, stop=range_opt, num=number, dtype=np.single)
@@ -304,8 +314,10 @@ class Evaluate:
                 plt.title(f"{type(self.method).__name__} {self.experiment} output images (z{z_i+1} & z{z_i+2})")
                 plt.xlabel(f"z{z_i+1}")
                 plt.ylabel(f"z{z_i+2}")
-                x_ticks = np.linspace(start=0, stop=total_size, num=number) + (size // 2) - 1
-                y_ticks = np.linspace(start=total_size, stop=0, num=number) + (size // 2) - 1
+                x_ticks = np.linspace(
+                    start=0, stop=total_size_with_padding - size_with_padding, num=number) + (size // 2) + 1
+                y_ticks = np.linspace(
+                    start=total_size_with_padding - size_with_padding, stop=0, num=number) + (size // 2) + 1
                 plt.xticks(ticks=x_ticks, labels=X)
                 plt.yticks(ticks=y_ticks, labels=X)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
@@ -326,8 +338,9 @@ class Evaluate:
             separate = conceptual_compression_opt["separate"]
             rows = (1 + self.method.get_num_groups()) # Original and each group
             columns = number
-            height = size * rows
-            width = size * columns
+            size_with_padding = size + 2
+            height = rows * size_with_padding
+            width = columns * size_with_padding
 
             # Get the data
             data = next(iter(test_loader))
@@ -407,9 +420,11 @@ class Evaluate:
 
                 # Create and display the 2D graph
                 plt.title(title)
-                # 0.95 is a hack to make the graph look good
-                x_ticks = (np.linspace(start=0, stop=width, num=number) + (size // 2)) * 0.95
-                y_ticks = (np.linspace(start=height, stop=0, num=self.method.get_num_groups()+1) + (size // 2)) * 0.95
+                plt.xlabel("Label")
+                x_ticks = np.linspace(start=0, stop=width - size_with_padding, num=number) \
+                          + (size_with_padding // 2) + 1
+                y_ticks = np.linspace(start=height - size_with_padding, stop=0, num=self.method.get_num_groups() + 1) \
+                          + (size_with_padding // 2) + 1
                 x_labels = [x.item() for x in labels[:number]]
                 y_labels = [f"Z{i+1}" for i in order[::-1]] + ["Original"]
                 plt.xticks(ticks=x_ticks, labels=x_labels)
@@ -424,8 +439,7 @@ class Evaluate:
                 images_temp,
                 order,
                 f"{type(self.method).__name__} {self.experiment} conceptual compression",
-                f"{self.path}_Conceptual_Compression.png"
-            )
+                f"{self.path}_Conceptual_Compression.png")
 
             if random_opt:
                 # Get random order
@@ -436,8 +450,7 @@ class Evaluate:
                     images_temp,
                     order,
                     f"{type(self.method).__name__} {self.experiment} conceptual compression (random order)",
-                    f"{self.path}_Conceptual_Compression_Random.png"
-                )
+                    f"{self.path}_Conceptual_Compression_Random.png")
 
             if separate:
                 # Get separate images
@@ -447,8 +460,7 @@ class Evaluate:
                     images_temp,
                     order,
                     f"{type(self.method).__name__} {self.experiment} conceptual compression (separate)",
-                    f"{self.path}_Conceptual_Compression_Separate.png"
-                )
+                    f"{self.path}_Conceptual_Compression_Separate.png")
 
     def save(self, best, verbose=False):
         path = self.path + "_Best" if best else self.path
@@ -628,6 +640,8 @@ class Evaluate:
                 plt.plot(X, avg_val_log_prob[model][:, 0], label=val_log_prob_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. training/validation ELBO")
+        plt.xlabel("Epoch")
+        plt.ylabel("Avg. ELBO")
         plt.legend()
         plt.savefig(f"{self.path}_ELBO.png")
         plt.show()
@@ -646,6 +660,8 @@ class Evaluate:
                 plt.plot(X, avg_train_KLD[model][:, g_i], label=train_KLD_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. training KL divergence")
+        plt.xlabel("Epoch")
+        plt.ylabel("Avg. KL divergence")
         plt.legend()
         plt.savefig(f"{self.path}_KLD_train.png")
         plt.show()
@@ -662,6 +678,8 @@ class Evaluate:
             plt.plot(X, avg_val_KLD[model][:, 0], label=val_KLD_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. validation KL divergence")
+        plt.xlabel("Epoch")
+        plt.ylabel("Avg. KL divergence")
         plt.legend()
         plt.savefig(f"{self.path}_KLD_val.png")
         plt.show()
@@ -679,6 +697,8 @@ class Evaluate:
                 plt.plot(X, grad[model][:, g_i], label=grad_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. gradient norm")
+        plt.xlabel("Epoch")
+        plt.ylabel("Avg. gradient norm")
         plt.legend()
         plt.savefig(f"{self.path}_grad.png")
         plt.show()
