@@ -271,7 +271,7 @@ class RNN(Method):
 
                 for x in [enc_to_lat, self.lats_to_dec[group]]:
                     for name, param in x.named_parameters():
-                        grad.append(param.grad.abs().flatten())
+                        grad_2.append(param.grad.abs().flatten())
 
                 grads.append(torch.concat(grad).mean().item())
                 grads_2.append(torch.concat(grad_2).mean().item())
