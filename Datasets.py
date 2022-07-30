@@ -67,6 +67,31 @@ class MNIST(Dataset):
         self.labels = [str(x) for x in range(10)]
 
 
+class FashionMNIST(Dataset):
+    def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
+        super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
+
+        # Get datasets
+        train_dataset = torchvision.datasets.FashionMNIST(
+            root=self.root, train=True, download=True, transform=self.transform)
+        test_dataset = torchvision.datasets.MNIST(
+            root=self.root, train=False, download=True, transform=self.transform)
+
+        # Split train and validation sets
+        train_set, val_set = torch.utils.data.random_split(
+            train_dataset, [self.train_set_size, self.val_set_size])
+
+        # Load train, validation, and test sets
+        self.train_loader = torch.utils.data.DataLoader(
+            train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
+        self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+
+        # Index to label
+        self.labels = [
+            "T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+
+
 class Omniglot(Dataset):
     def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
         super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
