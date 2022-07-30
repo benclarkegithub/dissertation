@@ -64,48 +64,50 @@ class RNN(Method):
 
         # Canvas
         self.canvas = architecture["Canvas"](size, channels)
-        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-3)
+        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Encoder
         self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
-        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3)
+        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Encoder 2
         if self.encoders:
             self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels)
-            self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=1e-3)
+            self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Encoder Encoder to Encoder
         if self.encoder_encoder_to_encoder:
             self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents)
-            self.optimiser_enc_enc_to_enc = optim.Adam(self.enc_enc_to_enc.parameters(), lr=1e-3)
+            self.optimiser_enc_enc_to_enc = optim.Adam(self.enc_enc_to_enc.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Encoder to Latents
         if self.encoder_to_latents == "One":
             self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
-            self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-3)
+            self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-3, weight_decay=1e-5)
         elif self.encoder_to_latents == "Many":
             self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
                                 for _ in range(self.num_groups)]
-            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-3) for x in self.enc_to_lats]
+            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-3, weight_decay=1e-5)
+                                          for x in self.enc_to_lats]
         elif self.encoder_to_latents == "Latents":
             self.enc_lats_to_lats = [architecture["EncoderLatentsToLatents"](num_latents, group, num_latents_group)
                                      for group in range(self.num_groups)]
-            self.optimiser_enc_lats_to_lats = [optim.Adam(x.parameters(), lr=1e-3) for x in self.enc_lats_to_lats]
+            self.optimiser_enc_lats_to_lats = [optim.Adam(x.parameters(), lr=1e-3, weight_decay=1e-5)
+                                               for x in self.enc_lats_to_lats]
 
         # Latents to Latents
         if not self.encoder_encoder_to_encoder:
             self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group)
-            self.optimiser_lats_to_lats = optim.Adam(self.lats_to_lats.parameters(), lr=1e-3)
+            self.optimiser_lats_to_lats = optim.Adam(self.lats_to_lats.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Latents to Decoder
         self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
                             for _ in range(self.num_groups)]
-        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-3) for x in self.lats_to_dec]
+        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-3, weight_decay=1e-5) for x in self.lats_to_dec]
 
         # Decoder
         self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
-        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-3)
+        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-3, weight_decay=1e-5)
 
 
     def train(self, i, data, *, get_grad=False):

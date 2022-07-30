@@ -50,14 +50,16 @@ class Quotient(Method):
                             for _ in range(self.num_groups)]
         self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
 
-        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-4) # 0.0001
-        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-4) # 0.0001
+        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=1e-4, weight_decay=1e-5) # 0.0001
+        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=1e-4, weight_decay=1e-5) # 0.0001
         if not self.encoder_to_latents:
-            self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-4) # 0.0001
+            self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=1e-4, weight_decay=1e-5) # 0.0001
         else:
-            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-4) for x in self.enc_to_lats] # 0.0001
-        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-4) for x in self.lats_to_dec] # 0.0001
-        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-4) # 0.0001
+            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=1e-4, weight_decay=1e-5)
+                                          for x in self.enc_to_lats] # 0.0001
+        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=1e-4, weight_decay=1e-5)
+                                      for x in self.lats_to_dec] # 0.0001
+        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=1e-4, weight_decay=1e-5) # 0.0001
 
     def train(self, i, data, *, get_grad=False):
         losses = []
