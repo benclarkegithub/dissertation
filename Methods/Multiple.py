@@ -28,6 +28,7 @@ class Multiple(Method):
                  num_latents_group,
                  variant,
                  *,
+                 learning_rate=1e-3,
                  size=28,
                  channels=1,
                  out_channels=None,
@@ -45,7 +46,7 @@ class Multiple(Method):
 
         self.VAEs = [VAE(num_latents, self.num_latents_group, size=size, channels=channels, out_channels=out_channels)
                      for _ in range(self.num_groups)]
-        self.optimisers = [optim.Adam(x.parameters(), lr=1e-3) for x in self.VAEs] # 0.001
+        self.optimisers = [optim.Adam(x.parameters(), lr=learning_rate) for x in self.VAEs]
 
     def train(self, i, data, *, get_grad=None, model=None):
         # Get the input images
