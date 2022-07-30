@@ -67,6 +67,30 @@ class MNIST(Dataset):
         self.labels = [str(x) for x in range(10)]
 
 
+class Omniglot(Dataset):
+    def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
+        super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
+
+        # Get datasets
+        train_dataset = torchvision.datasets.Omniglot(
+            root=self.root, background=True, download=True, transform=self.transform)
+        test_dataset = torchvision.datasets.Omniglot(
+            root=self.root, background=False, download=True, transform=self.transform)
+
+        # Split train and validation sets
+        train_set, val_set = torch.utils.data.random_split(
+            train_dataset, [self.train_set_size, self.val_set_size])
+
+        # Load train, validation, and test sets
+        self.train_loader = torch.utils.data.DataLoader(
+            train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
+        self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+
+        # Index to label
+        self.labels = [str(x) for x in range(1623)]
+
+
 class CIFAR10(Dataset):
     def __init__(self, root, batch_size, train_set_size, val_set_size, *, seed=None):
         super().__init__(root, batch_size, train_set_size, val_set_size, seed=seed)
