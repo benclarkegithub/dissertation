@@ -74,7 +74,7 @@ class FashionMNIST(Dataset):
         # Get datasets
         train_dataset = torchvision.datasets.FashionMNIST(
             root=self.root, train=True, download=True, transform=self.transform)
-        test_dataset = torchvision.datasets.MNIST(
+        test_dataset = torchvision.datasets.FashionMNIST(
             root=self.root, train=False, download=True, transform=self.transform)
 
         # Split train and validation sets
