@@ -157,6 +157,11 @@ class Single(Method):
                 x.step()
             self.optimiser_decoder.step()
 
+            # Fix gradients
+            grads_temp = grads.copy()
+            grads_temp.insert(0, 0)
+            grads = [grads[i] - grads_temp[i] for i in range(len(grads))]
+
         return losses, log_probs, KLDs, grads
 
     @torch.no_grad()

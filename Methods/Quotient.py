@@ -64,6 +64,7 @@ class Quotient(Method):
         log_probs = []
         KLDs = []
         grads = []
+        grads_2 = []
 
         # Get the input images
         images, _ = data
@@ -172,8 +173,14 @@ class Quotient(Method):
             KLDs.append(KLD.detach())
 
             # Get the gradients
+            # Not 100% correct when encoder_to_latents == False
             if get_grad:
                 grad = []
+                grad_2 = []
+
+                for x in [self.encoder, self.decoder]:
+                    for name, param in x.named_parameters():
+                        grad.append(param.grad.abs().flatten())
 
                 enc_to_lat = None
                 if not self.encoder_to_latents:
@@ -181,11 +188,12 @@ class Quotient(Method):
                 else:
                     enc_to_lat = self.enc_to_lats[group]
 
-                for x in [self.encoder, enc_to_lat, self.lats_to_dec[group], self.decoder]:
+                for x in [enc_to_lat, self.lats_to_dec[group]]:
                     for name, param in x.named_parameters():
                         grad.append(param.grad.abs().flatten())
 
                 grads.append(torch.concat(grad).mean().item())
+                grads_2.append(torch.concat(grad_2).mean().item())
 
         # Step
         self.optimiser_canvas.step()
@@ -198,6 +206,14 @@ class Quotient(Method):
         for x in self.optimiser_lats_to_dec:
             x.step()
         self.optimiser_decoder.step()
+
+        # Fix KLDs and gradients
+        KLDs_temp = KLDs.copy()
+        KLDs_temp.insert(0, 0)
+        KLDs = [KLDs[i] - KLDs_temp[i] for i in range(len(KLDs))]
+        grads_temp = grads.copy()
+        grads_temp.insert(0, 0)
+        grads = [grads[i] - grads_temp[i] + grads_2[i] for i in range(len(grads))]
 
         return losses, log_probs, KLDs, grads
 

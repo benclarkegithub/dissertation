@@ -113,6 +113,7 @@ class RNN(Method):
         log_probs = []
         KLDs = []
         grads = []
+        grads_2 = []
 
         # Get the input images
         images, _ = data
@@ -250,8 +251,15 @@ class RNN(Method):
             KLDs.append(KLD.detach())
 
             # Get the gradients
+            # Not 100% correct when encoder_to_latents == "One"
             if get_grad:
                 grad = []
+                grad_2 = []
+
+                components = [self.encoder, self.decoder] + ([self.encoder_2] if self.encoders else [])
+                for x in components:
+                    for name, param in x.named_parameters():
+                        grad.append(param.grad.abs().flatten())
 
                 enc_to_lat = None
                 if self.encoder_to_latents == "One":
@@ -261,14 +269,12 @@ class RNN(Method):
                 elif self.encoder_to_latents == "Latents":
                     enc_to_lat = self.enc_lats_to_lats[group]
 
-                components = [self.encoder, enc_to_lat, self.lats_to_dec[group], self.decoder]
-                if self.encoders:
-                    components.append(self.encoder_2)
-                for x in components:
+                for x in [enc_to_lat, self.lats_to_dec[group]]:
                     for name, param in x.named_parameters():
                         grad.append(param.grad.abs().flatten())
 
                 grads.append(torch.concat(grad).mean().item())
+                grads_2.append(torch.concat(grad_2).mean().item())
 
         # Step
         self.optimiser_canvas.step()
@@ -290,6 +296,14 @@ class RNN(Method):
         if not self.encoder_encoder_to_encoder:
             self.optimiser_lats_to_lats.step()
         self.optimiser_decoder.step()
+
+        # Fix KLDs and gradients
+        KLDs_temp = KLDs.copy()
+        KLDs_temp.insert(0, 0)
+        KLDs = [KLDs[i] - KLDs_temp[i] for i in range(len(KLDs))]
+        grads_temp = grads.copy()
+        grads_temp.insert(0, 0)
+        grads = [grads[i] - grads_temp[i] + grads_2[i] for i in range(len(grads))]
 
         return losses, log_probs, KLDs, grads
 
