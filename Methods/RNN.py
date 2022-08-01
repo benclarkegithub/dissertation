@@ -64,57 +64,57 @@ class RNN(Method):
         self.resample = resample
 
         # Canvas
-        self.canvas = architecture["Canvas"](size, channels)
+        self.canvas = architecture["Canvas"](size, channels).to(self.device)
         self.optimiser_canvas = optim.Adam(
             self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder
-        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
+        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels).to(self.device)
         self.optimiser_encoder = optim.Adam(
             self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder 2
         if self.encoders:
-            self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels)
+            self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels).to(self.device)
             self.optimiser_encoder_2 = optim.Adam(
                 self.encoder_2.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder Encoder to Encoder
         if self.encoder_encoder_to_encoder:
-            self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents)
+            self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents).to(self.device)
             self.optimiser_enc_enc_to_enc = optim.Adam(
                 self.enc_enc_to_enc.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder to Latents
         if self.encoder_to_latents == "One":
-            self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
+            self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group).to(self.device)
             self.optimiser_enc_to_lat = optim.Adam(
                 self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
         elif self.encoder_to_latents == "Many":
-            self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
+            self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group).to(self.device)
                                 for _ in range(self.num_groups)]
             self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
                                           for x in self.enc_to_lats]
         elif self.encoder_to_latents == "Latents":
-            self.enc_lats_to_lats = [architecture["EncoderLatentsToLatents"](num_latents, group, num_latents_group)
+            self.enc_lats_to_lats = [architecture["EncoderLatentsToLatents"](num_latents, group, num_latents_group).to(self.device)
                                      for group in range(self.num_groups)]
             self.optimiser_enc_lats_to_lats = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
                                                for x in self.enc_lats_to_lats]
 
         # Latents to Latents
         if not self.encoder_encoder_to_encoder:
-            self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group)
+            self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group).to(self.device)
             self.optimiser_lats_to_lats = optim.Adam(
                 self.lats_to_lats.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Latents to Decoder
-        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
+        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group).to(self.device)
                             for _ in range(self.num_groups)]
         self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
                                       for x in self.lats_to_dec]
 
         # Decoder
-        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
+        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels).to(self.device)
         self.optimiser_decoder = optim.Adam(
             self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
@@ -128,6 +128,7 @@ class RNN(Method):
 
         # Get the input images
         images, _ = data
+        images = images.to(self.device)
 
         # Zero the parameter's gradients
         self.optimiser_canvas.zero_grad()
@@ -171,7 +172,7 @@ class RNN(Method):
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
 
         # Get the blank canvas
-        ones = torch.ones(images.shape[0], 1)
+        ones = torch.ones(images.shape[0], 1, device=self.device)
         canvas = self.canvas(ones)
         canvas_reshaped = canvas.reshape(images.shape)
 
@@ -322,6 +323,7 @@ class RNN(Method):
     def test(self, i, data):
         # Get the input images
         images, _ = data
+        images = images.to(self.device)
 
         # Forward
         # Get encoder output of images
@@ -344,7 +346,7 @@ class RNN(Method):
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
 
         # Get the blank canvas
-        ones = torch.ones(images.shape[0], 1)
+        ones = torch.ones(images.shape[0], 1, device=self.device)
         canvas = self.canvas(ones)
         canvas_reshaped = canvas.reshape(images.shape)
 

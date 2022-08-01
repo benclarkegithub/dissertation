@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 import torch
-from torch import nn
 
 class Method(ABC):
     def __init__(self, num_latents, type):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.num_latents = num_latents
         self.num_latents_group = 1
         self.num_groups = num_latents // self.num_latents_group
