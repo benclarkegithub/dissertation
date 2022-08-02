@@ -53,7 +53,7 @@ class RNN(Method):
                  out_channels=None,
                  log_prob_fn="CB",
                  std=0.05):
-        super().__init__(num_latents=num_latents, type="Single")
+        super().__init__(num_latents=num_latents, type="Multiple")
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
@@ -127,7 +127,7 @@ class RNN(Method):
             self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
 
-    def train(self, i, data, *, get_grad=False):
+    def train(self, i, data, *, get_grad=False, model=None):
         losses = []
         log_probs = []
         KLDs = []
@@ -190,7 +190,7 @@ class RNN(Method):
         # Used when resample == False
         zs = None
 
-        for group in range(self.num_groups):
+        for group in range(model + 1):
             mu_2, logvar_2 = None, None
             start = group * self.num_latents_group
             end = (group * self.num_latents_group) + self.num_latents_group
@@ -335,10 +335,10 @@ class RNN(Method):
         grads_temp.insert(0, 0)
         grads = [grads[i] - grads_temp[i] + grads_2[i] for i in range(len(grads))]
 
-        return losses, log_probs, KLDs, grads
+        return [losses[-1]], [log_probs[-1]], [KLDs[-1]], [grads[-1]]
 
     @torch.no_grad()
-    def test(self, i, data):
+    def test(self, i, data, *, model=None):
         # Get the input images
         images, _ = data
         images = images.to(self.device)
@@ -375,7 +375,8 @@ class RNN(Method):
         # Used when resample == False
         zs = None
 
-        for group in range(self.num_groups):
+        model = model if model is not None else self.num_groups - 1
+        for group in range(model + 1):
             mu_2, logvar_2 = None, None
             start = group * self.num_latents_group
             end = (group * self.num_latents_group) + self.num_latents_group
