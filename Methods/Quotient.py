@@ -7,6 +7,8 @@ from Method import Method
 
 
 """
+Options
+
 encoder_to_latents
     True:   Many sets of parameters for encoding to latent variable(s)
     False:  One set of parameters for encoding to latent variable(s)
@@ -20,6 +22,7 @@ class Quotient(Method):
                  architecture,
                  num_latents,
                  num_latents_group,
+                 # Options
                  encoder_to_latents,
                  resample,
                  *,
@@ -28,7 +31,8 @@ class Quotient(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
-                 std=0.05):
+                 std=0.05,
+                 clip=None):
         super().__init__(num_latents=num_latents, type="Single")
 
         self.num_latents_group = num_latents_group
@@ -37,6 +41,8 @@ class Quotient(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.clip = clip
+        # Options
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
 
@@ -197,6 +203,18 @@ class Quotient(Method):
 
                 grads.append(torch.concat(grad).mean().item())
                 grads_2.append(torch.concat(grad_2).mean().item())
+
+        # Clip the gradients
+        if self.clip is not None:
+            torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), self.clip)
+            if not self.encoder_to_latents:
+                torch.nn.utils.clip_grad_norm_(self.enc_to_lat.parameters(), self.clip)
+            else:
+                for x in self.enc_to_lats:
+                    torch.nn.utils.clip_grad_norm_(x.parameters(), self.clip)
+            for x in self.lats_to_dec:
+                torch.nn.utils.clip_grad_norm_(x.parameters(), self.clip)
+            torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), self.clip)
 
         # Step
         self.optimiser_canvas.step()
