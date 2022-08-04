@@ -7,7 +7,7 @@ from Architectures.Basic import EncoderToLatents, LatentsToDecoder
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_latents, size, channels, out_channels):
+    def __init__(self, size, channels, hidden_size, out_channels):
         super().__init__()
 
         # Convolutional layers
@@ -28,8 +28,8 @@ class Encoder(nn.Module):
             in_channels=out_channels * 4, out_channels=out_channels * 8, kernel_size=2, stride=2, padding=0)
 
         # Fully-connected layers
-        self.fc1 = nn.Linear(out_channels * 8 * ((size // 2 // 2 // 2) ** 2), num_latents * 4)
-        self.fc2 = nn.Linear(num_latents * 4, num_latents * 4)
+        self.fc1 = nn.Linear(out_channels * 8 * ((size // 2 // 2 // 2) ** 2), hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, x):
         # channels x size x size -> (out_channels * 8) x (size // 2 // 2 // 2) x (size // 2 // 2 // 2)
@@ -45,24 +45,24 @@ class Encoder(nn.Module):
         x = F.leaky_relu(self.conv8(x))
         # (out_channels * 8) x (size // 2 // 2 // 2) x (size // 2 // 2 // 2) -> out_channels * 8 * ((size // 2 // 2 // 2) ** 2)
         x = torch.flatten(x, start_dim=1)
-        # out_channels * 8 * ((size // 2 // 2 // 2) ** 2) -> num_latents * 4
+        # out_channels * 8 * ((size // 2 // 2 // 2) ** 2) -> hidden_size
         x = F.leaky_relu(self.fc1(x))
-        # num_latents * 4 -> num_latents * 4
+        # hidden_size -> hidden_size
         x = F.leaky_relu(self.fc2(x))
 
         return x
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_latents, size, channels, out_channels):
+    def __init__(self, size, channels, hidden_size, out_channels):
         super().__init__()
 
         self.size = size
         self.out_channels = out_channels
 
         # Fully-connected layers
-        self.fc1 = nn.Linear(num_latents * 4, num_latents * 4)
-        self.fc2 = nn.Linear(num_latents * 4, out_channels * 8 * ((size // 2 // 2 // 2) ** 2))
+        self.fc1 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, out_channels * 8 * ((size // 2 // 2 // 2) ** 2))
 
         # Deconvolutional layers
         self.deconv1 = nn.ConvTranspose2d(
@@ -83,9 +83,9 @@ class Decoder(nn.Module):
             in_channels=out_channels, out_channels=channels, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
-        # num_latents * 4 -> num_latents * 4
+        # hidden_size -> hidden_size
         x = F.leaky_relu(self.fc1(x))
-        # num_latents * 4 -> out_channels * 8 * ((size // 2 // 2 // 2) ** 2)
+        # hidden_size -> out_channels * 8 * ((size // 2 // 2 // 2) ** 2)
         x = F.leaky_relu(self.fc2(x))
         # out_channels * 8 * ((size // 2 // 2 // 2) ** 2) -> (out_channels * 8) x (size // 2 // 2 // 2) x (size // 2 // 2 // 2)
         x = x.reshape(x.shape[0], self.out_channels * 8, self.size // 2 // 2 // 2, self.size // 2 // 2 // 2)

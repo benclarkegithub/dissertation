@@ -32,6 +32,7 @@ class Quotient(Method):
                  out_channels=None,
                  log_prob_fn="CB",
                  std=0.05,
+                 hidden_size=None,
                  clip=None):
         super().__init__(num_latents=num_latents, type="Single")
 
@@ -41,31 +42,32 @@ class Quotient(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
         self.clip = clip
         # Options
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
 
         self.canvas = architecture["Canvas"](size, channels)
-        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
+        self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels)
         if not self.encoder_to_latents:
-            self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group)
+            self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group)
         else:
-            self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
-                                for _ in range(self.num_groups)]
-        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
-                            for _ in range(self.num_groups)]
-        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
+            self.enc_to_lats = [
+                architecture["EncoderToLatents"](self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
+        self.lats_to_dec = [
+            architecture["LatentsToDecoder"](self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
+        self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels)
 
         self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
         else:
-            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                                          for x in self.enc_to_lats]
-        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                                      for x in self.lats_to_dec]
+            self.optimiser_enc_to_lats = [
+                optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5) for x in self.enc_to_lats]
+        self.optimiser_lats_to_dec = [
+            optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5) for x in self.lats_to_dec]
         self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
     def train(self, i, data, *, get_grad=False):

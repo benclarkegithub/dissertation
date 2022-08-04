@@ -18,51 +18,51 @@ class Canvas(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_latents, size, channels, out_channels):
+    def __init__(self, size, channels, hidden_size, out_channels):
         super().__init__()
 
         # Fully-connected layers
-        self.fc1 = nn.Linear(channels * (size ** 2), num_latents * 4)
-        self.fc2 = nn.Linear(num_latents * 4, num_latents * 4)
+        self.fc1 = nn.Linear(channels * (size ** 2), hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, x):
         # channels x size x size -> channels * (size ** 2)
         x = torch.flatten(x, start_dim=1)
-        # channels * (size ** 2) -> num_latents * 4
+        # channels * (size ** 2) -> hidden_size
         x = F.leaky_relu(self.fc1(x))
-        # num_latents * 4 -> num_latents * 4
+        # hidden_size -> hidden_size
         x = F.leaky_relu(self.fc2(x))
 
         return x
 
 
 class EncoderEncoderToEncoder(nn.Module):
-    def __init__(self, num_latents):
+    def __init__(self, hidden_size):
         super().__init__()
 
         # Fully-connected layers
-        self.fc1 = nn.Linear(num_latents * 8, num_latents * 4)
-        self.fc2 = nn.Linear(num_latents * 4, num_latents * 4)
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, enc_1, enc_2):
-        # num_latents * 8 -> num_latents * 4
+        # hidden_size * 2 -> hidden_size
         x = F.leaky_relu(self.fc1(torch.cat([enc_1, enc_2], dim=1)))
-        # num_latents * 4 -> num_latents * 4
+        # hidden_size -> hidden_size
         x = F.leaky_relu(self.fc2(x))
 
         return x
 
 
 class EncoderToLatents(nn.Module):
-    def __init__(self, num_latents, num_latents_group):
+    def __init__(self, hidden_size, num_latents_group):
         super().__init__()
 
         # Fully-connected layers
-        self.fc_mean = nn.Linear(num_latents * 4, num_latents_group)
-        self.fc_logvar = nn.Linear(num_latents * 4, num_latents_group)
+        self.fc_mean = nn.Linear(hidden_size, num_latents_group)
+        self.fc_logvar = nn.Linear(hidden_size, num_latents_group)
 
     def forward(self, x):
-        # num_latents * 4 -> num_latents_group
+        # hidden_size -> num_latents_group
         mu = self.fc_mean(x)
         logvar = self.fc_logvar(x)
 
@@ -70,22 +70,22 @@ class EncoderToLatents(nn.Module):
 
 
 class EncoderLatentsToLatents(nn.Module):
-    def __init__(self, num_latents, group, num_latents_group):
+    def __init__(self, hidden_size, group, num_latents_group):
         super().__init__()
 
         # Fully-connected layers
-        encoder_plus_latents_size = (num_latents * 4) + (group * num_latents_group * 2)
+        encoder_plus_latents_size = hidden_size + (group * num_latents_group * 2)
         self.fc1 = nn.Linear(encoder_plus_latents_size, encoder_plus_latents_size)
         self.fc_mean = nn.Linear(encoder_plus_latents_size, num_latents_group)
         self.fc_logvar = nn.Linear(encoder_plus_latents_size, num_latents_group)
 
     def forward(self, x, mu, logvar):
-        # (num_latents * 4) + (group * num_latents_group * 2) -> (num_latents * 4) + (group * num_latents_group * 2)
+        # hidden_size + (group * num_latents_group * 2) -> hidden_size + (group * num_latents_group * 2)
         if mu is not None:
             x = F.leaky_relu(self.fc1(torch.cat([x, mu, logvar], dim=1)))
         else:
             x = F.leaky_relu(self.fc1(x))
-        # (num_latents * 4) + (group * num_latents_group) -> num_latents_group
+        # hidden_size + (group * num_latents_group) -> num_latents_group
         mu = self.fc_mean(x)
         logvar = self.fc_logvar(x)
 
@@ -112,31 +112,31 @@ class LatentsToLatents(nn.Module):
 
 
 class LatentsToDecoder(nn.Module):
-    def __init__(self, num_latents, num_latents_group):
+    def __init__(self, hidden_size, num_latents_group):
         super().__init__()
 
         # Fully-connected layers
-        self.fc = nn.Linear(num_latents_group, num_latents * 4)
+        self.fc = nn.Linear(num_latents_group, hidden_size)
 
     def forward(self, x):
-        # num_latents -> num_latents * 4
+        # num_latents -> hidden_size
         x = F.leaky_relu(self.fc(x))
 
         return x
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_latents, size, channels, out_channels):
+    def __init__(self, hidden_size, size, channels, out_channels):
         super().__init__()
 
         # Fully-connected layers
-        self.fc1 = nn.Linear(num_latents * 4, num_latents * 4)
-        self.fc2 = nn.Linear(num_latents * 4, channels * (size ** 2))
+        self.fc1 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, channels * (size ** 2))
 
     def forward(self, x):
-        # num_latents * 4 -> num_latents * 4
+        # hidden_size -> hidden_size
         x = F.leaky_relu(self.fc1(x))
-        # num_latents * 4 -> channels * (size ** 2)
+        # hidden_size -> channels * (size ** 2)
         x = self.fc2(x)
 
         return x

@@ -17,7 +17,8 @@ class Single(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
-                 std=0.05):
+                 std=0.05,
+                 hidden_size=None):
         super().__init__(num_latents=num_latents, type="Single")
 
         self.num_latents_group = num_latents_group
@@ -27,13 +28,14 @@ class Single(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
-        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels)
-        self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group)
+        self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels)
+        self.enc_to_lats = [architecture["EncoderToLatents"](self.hidden_size, num_latents_group)
                             for _ in range(self.num_groups)]
-        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group)
+        self.lats_to_dec = [architecture["LatentsToDecoder"](self.hidden_size, num_latents_group)
                             for _ in range(self.num_groups)]
-        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels)
+        self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels)
 
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate)
         self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=learning_rate) for x in self.enc_to_lats]

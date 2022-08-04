@@ -16,15 +16,14 @@ encoders
     True:   Use two encoders, one for the images and one for the reconstruction
     False:  Use one encoder, for both the images and the reconstruction
     
-encoder_encoder_to_encoder
-    True:   Combine the image and reconstruction encodings into one encoding
-    False:  Do not combine the encodings, get a separate distribution for the images and reconstruction and combine them
-            together with LatentsToLatents
+to_latents
+    "Encoder":          p(z | x) if reconstruction is False else p(z | x, x̂)
+    "EncoderLatents":   p(z | x, z_1, …, z_n-1) if reconstruction is False else p(z | x, x̂, z_1, …, z_n-1)
+    "Latents":          p(z | z_a, z_b) where z_a = z | x, z_b = z | x̂
             
 encoder_to_latents
-    "Many":     Many sets of parameters for encoding to latent variable(s)
-    "One":      One set of parameters for encoding to latent variable(s)
-    "Latents":  Many sets of parameters and condition Z_n on the combined image and reconstruction encoding and Z_<n
+    True:   Many sets of parameters for encoding to latent variable(s)
+    False:  One set of parameters for encoding to latent variable(s)
     
 backprop
     True:   Backpropagate through Z_<=n at each step
@@ -42,7 +41,7 @@ class RNN(Method):
                  # Options
                  reconstruction,
                  encoders,
-                 encoder_encoder_to_encoder,
+                 to_latents,
                  encoder_to_latents,
                  backprop,
                  resample,
@@ -52,7 +51,8 @@ class RNN(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
-                 std=0.05):
+                 std=0.05,
+                 hidden_size=None):
         super().__init__(num_latents=num_latents, type="Multiple")
 
         self.num_latents_group = num_latents_group
@@ -61,71 +61,76 @@ class RNN(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
         # Options
         self.reconstruction = reconstruction
         self.encoders = encoders
-        self.encoder_encoder_to_encoder = encoder_encoder_to_encoder
-        if (encoder_to_latents == "Latents") and not encoder_encoder_to_encoder:
-            raise Exception("The EncoderLatentsToLatents component needs the EncoderEncoderToEncoder component.")
+        self.to_latents = to_latents
         self.encoder_to_latents = encoder_to_latents
         self.backprop = backprop
         self.resample = resample
 
         # Canvas
         self.canvas = architecture["Canvas"](size, channels).to(self.device)
-        self.optimiser_canvas = optim.Adam(
-            self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
+        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder
-        self.encoder = architecture["Encoder"](num_latents, size, channels, out_channels).to(self.device)
-        self.optimiser_encoder = optim.Adam(
-            self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
+        self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels).to(self.device)
+        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder 2
         if self.encoders:
-            self.encoder_2 = architecture["Encoder"](num_latents, size, channels, out_channels).to(self.device)
-            self.optimiser_encoder_2 = optim.Adam(
-                self.encoder_2.parameters(), lr=learning_rate, weight_decay=1e-5)
+            self.encoder_2 = architecture["Encoder"](size, channels, self.hidden_size, out_channels).to(self.device)
+            self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder Encoder to Encoder
-        if self.encoder_encoder_to_encoder:
-            self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](num_latents).to(self.device)
+        if self.reconstruction and (self.to_latents == "Encoder"):
+            self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](self.hidden_size).to(self.device)
             self.optimiser_enc_enc_to_enc = optim.Adam(
                 self.enc_enc_to_enc.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder to Latents
-        if self.encoder_to_latents == "One":
-            self.enc_to_lat = architecture["EncoderToLatents"](num_latents, num_latents_group).to(self.device)
-            self.optimiser_enc_to_lat = optim.Adam(
-                self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
-        elif self.encoder_to_latents == "Many":
-            self.enc_to_lats = [architecture["EncoderToLatents"](num_latents, num_latents_group).to(self.device)
-                                for _ in range(self.num_groups)]
-            self.optimiser_enc_to_lats = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                                          for x in self.enc_to_lats]
-        elif self.encoder_to_latents == "Latents":
-            self.enc_lats_to_lats = [architecture["EncoderLatentsToLatents"](num_latents, group, num_latents_group).to(self.device)
-                                     for group in range(self.num_groups)]
-            self.optimiser_enc_lats_to_lats = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                                               for x in self.enc_lats_to_lats]
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
+                self.optimiser_enc_to_lat = optim.Adam(
+                    self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
+            else:
+                self.enc_to_lats = [
+                    architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
+                    for _ in range(self.num_groups)]
+                self.optimiser_enc_to_lats = [
+                    optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
+                    for x in self.enc_to_lats]
+
+        # Encoder Latents to Latents
+        elif self.to_latents == "EncoderLatents":
+            hidden_size_temp = self.hidden_size if not self.reconstruction else self.hidden_size * 2
+
+            self.enc_lats_to_lats = [
+                architecture["EncoderLatentsToLatents"](hidden_size_temp, group, num_latents_group).to(self.device)
+                for group in range(self.num_groups)]
+            self.optimiser_enc_lats_to_lats = [
+                optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
+                for x in self.enc_lats_to_lats]
 
         # Latents to Latents
-        if not self.encoder_encoder_to_encoder:
+        if self.to_latents == "Latents":
             self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group).to(self.device)
             self.optimiser_lats_to_lats = optim.Adam(
                 self.lats_to_lats.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Latents to Decoder
-        self.lats_to_dec = [architecture["LatentsToDecoder"](num_latents, num_latents_group).to(self.device)
-                            for _ in range(self.num_groups)]
-        self.optimiser_lats_to_dec = [optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                                      for x in self.lats_to_dec]
+        self.lats_to_dec = [
+            architecture["LatentsToDecoder"](self.hidden_size, num_latents_group).to(self.device)
+            for _ in range(self.num_groups)]
+        self.optimiser_lats_to_dec = [
+            optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
+            for x in self.lats_to_dec]
 
         # Decoder
-        self.decoder = architecture["Decoder"](num_latents, size, channels, out_channels).to(self.device)
-        self.optimiser_decoder = optim.Adam(
-            self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
-
+        self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels).to(self.device)
+        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
     def train(self, i, data, *, get_grad=False, model=None):
         losses = []
@@ -143,20 +148,21 @@ class RNN(Method):
         self.optimiser_encoder.zero_grad()
         if self.encoders:
             self.optimiser_encoder_2.zero_grad()
-        if self.encoder_encoder_to_encoder:
+        if self.reconstruction and (self.to_latents == "Encoder"):
             self.optimiser_enc_enc_to_enc.zero_grad()
-        if self.encoder_to_latents == "One":
-            self.optimiser_enc_to_lat.zero_grad()
-        elif self.encoder_to_latents == "Many":
-            for x in self.optimiser_enc_to_lats:
-                x.zero_grad()
-        elif self.encoder_to_latents == "Latents":
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                self.optimiser_enc_to_lat.zero_grad()
+            else:
+                for x in self.optimiser_enc_to_lats:
+                    x.zero_grad()
+        elif self.to_latents == "EncoderLatents":
             for x in self.optimiser_enc_lats_to_lats:
                 x.zero_grad()
+        if self.to_latents == "Latents":
+            self.optimiser_lats_to_lats.zero_grad()
         for x in self.optimiser_lats_to_dec:
             x.zero_grad()
-        if not self.encoder_encoder_to_encoder:
-            self.optimiser_lats_to_lats.zero_grad()
         self.optimiser_decoder.zero_grad()
 
         # Forward
@@ -165,11 +171,12 @@ class RNN(Method):
 
         mu_images = None
         logvar_images = None
-        if not self.encoder_encoder_to_encoder:
-            # Get the image distribution to combine it later with the LatentsToLatents component
-            if self.encoder_to_latents == "One":
+        if (not self.reconstruction and (self.to_latents == "Encoder")) or (self.to_latents == "Latents"):
+            # Get the parameters of the distribution of the images for either the EncoderToEncoder or the
+            # LatentsToLatents component.
+            if not self.encoder_to_latents:
                 mu_images, logvar_images = self.enc_to_lat(x_enc_images)
-            elif self.encoder_to_latents == "Many":
+            else:
                 mu_images, logvar_images = [], []
 
                 for enc_to_lat in self.enc_to_lats:
@@ -179,15 +186,17 @@ class RNN(Method):
 
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
 
-        # Get the blank canvas
-        ones = torch.ones(images.shape[0], 1, device=self.device)
-        canvas = self.canvas(ones)
-        canvas_reshaped = canvas.reshape(images.shape)
+        outputs = None
+        if self.reconstruction:
+            # Get the blank canvas
+            ones = torch.ones(images.shape[0], 1, device=self.device)
+            canvas = self.canvas(ones)
+            canvas_reshaped = canvas.reshape(images.shape)
+            outputs = [canvas_reshaped]
 
         mu = None
         logvar = None
-        outputs = [canvas_reshaped]
-        # Used when resample == False
+        # Used when resample is False
         zs = None
 
         for group in range(model + 1):
@@ -195,40 +204,50 @@ class RNN(Method):
             start = group * self.num_latents_group
             end = (group * self.num_latents_group) + self.num_latents_group
 
-            if self.reconstruction:
-                # Get encoder output of reconstruction
+            if not self.reconstruction:
+                if self.to_latents == "Encoder":
+                    if not self.encoder_to_latents:
+                        mu_2, logvar_2 = mu_images, logvar_images
+                    else:
+                        mu_2, logvar_2 = mu_images[:, start:end], logvar_images[:, start:end]
+                elif self.to_latents == "EncoderLatents":
+                    mu_temp = mu.detach() if mu is not None else None
+                    logvar_temp = logvar.detach() if logvar is not None else None
+                    mu_2, logvar_2 = self.enc_lats_to_lats[group](x_enc_images, mu_temp, logvar_temp)
+            else:
+                # Get the encoder output of the reconstruction
                 output_images = torch.sigmoid(outputs[-1])
-                if self.encoders:
-                    x_enc_rec = self.encoder_2(output_images)
-                else:
+                if not self.encoders:
                     x_enc_rec = self.encoder(output_images)
-
-                # Combine the image and reconstruction encodings or use the reconstruction encoding
-                x_enc_temp = \
-                    self.enc_enc_to_enc(x_enc_images, x_enc_rec) if self.encoder_encoder_to_encoder else x_enc_rec
+                else:
+                    x_enc_rec = self.encoder_2(output_images)
 
                 mu_1, logvar_1 = None, None
-                if self.encoder_to_latents == "One":
-                    mu_1, logvar_1 = self.enc_to_lat(x_enc_temp)
-                elif self.encoder_to_latents == "Many":
-                    mu_1, logvar_1 = self.enc_to_lats[group](x_enc_temp)
-                elif self.encoder_to_latents == "Latents":
-                    mu_1, logvar_1 = self.enc_lats_to_lats[group](x_enc_temp, mu, logvar)
+                if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+                    x_enc = None
+                    if (self.to_latents == "Encoder"):
+                        x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
+                    elif (self.to_latents == "Latents"):
+                        x_enc = x_enc_rec
 
-                if not self.encoder_encoder_to_encoder:
-                    # Use the LatentsToLatents component to get a combined images and reconstruction distribution
-                    if self.encoder_to_latents == "One":
+                    if not self.encoder_to_latents:
+                        mu_1, logvar_1 = self.enc_to_lat(x_enc)
+                    else:
+                        mu_1, logvar_1 = self.enc_to_lats[group](x_enc)
+
+                if self.to_latents == "Encoder":
+                    mu_2, logvar_2 = mu_1, logvar_1
+                elif self.to_latents == "EncoderLatents":
+                    x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    mu_temp = mu.detach() if mu is not None else None
+                    logvar_temp = logvar.detach() if logvar is not None else None
+                    mu_2, logvar_2 = self.enc_lats_to_lats[group](x, mu_temp, logvar_temp)
+                elif self.to_latents == "Latents":
+                    if not self.encoder_to_latents:
                         mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
-                    elif self.encoder_to_latents == "Many":
+                    else:
                         mu_2, logvar_2 = self.lats_to_lats(
                             mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
-                else:
-                    mu_2, logvar_2 = mu_1, logvar_1
-            else:
-                if self.encoder_to_latents == "One":
-                    mu_2, logvar_2 = mu_images, logvar_images
-                elif self.encoder_to_latents == "Many":
-                    mu_2, logvar_2 = mu_images[:, start:end], logvar_images[:, start:end]
 
             # Detach mu, logvar for Z_<n if backprop == False
             if self.backprop:
@@ -257,9 +276,10 @@ class RNN(Method):
 
             logits = self.decoder(z_dec)
 
-            # Reshape logits and add to outputs
-            logits_reshaped = logits.reshape(images.shape)
-            outputs.append(logits_reshaped.detach())
+            if self.reconstruction:
+                # Reshape logits and add to outputs
+                logits_reshaped = logits.reshape(images.shape)
+                outputs.append(logits_reshaped.detach())
 
             # Loss, backward
             loss, log_prob, KLD = self.ELBO(
@@ -280,7 +300,7 @@ class RNN(Method):
             KLDs.append(KLD.detach())
 
             # Get the gradients
-            # Not 100% correct when encoder_to_latents == "One"
+            # Not 100% correct when encoder_to_latents is False
             if get_grad:
                 grad = []
                 grad_2 = []
@@ -291,13 +311,13 @@ class RNN(Method):
                         grad.append(param.grad.abs().flatten())
 
                 components_2 = []
-                if self.encoder_to_latents == "One":
-                    components_2 += components_2 + [self.enc_to_lat]
-                elif self.encoder_to_latents == "Many" or self.encoder_to_latents == "Latents":
-                    components_2 += components_2 + [self.enc_to_lats[group]]
-
-                    if self.encoder_to_latents == "Latents":
-                        components_2 += [self.enc_lats_to_lats[group]]
+                if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+                    if not self.encoder_to_latents:
+                        components_2 += components_2 + [self.enc_to_lat]
+                    else:
+                        components_2 += components_2 + [self.enc_to_lats[group]]
+                elif self.to_latents == "EncoderLatents":
+                    components_2 += [self.enc_lats_to_lats[group]]
 
                 for x in components_2:
                     for name, param in x.named_parameters():
@@ -311,20 +331,21 @@ class RNN(Method):
         self.optimiser_encoder.step()
         if self.encoders:
             self.optimiser_encoder_2.step()
-        if self.encoder_encoder_to_encoder:
+        if self.reconstruction and (self.to_latents == "Encoder"):
             self.optimiser_enc_enc_to_enc.step()
-        if self.encoder_to_latents == "One":
-            self.optimiser_enc_to_lat.step()
-        elif self.encoder_to_latents == "Many":
-            for x in self.optimiser_enc_to_lats:
-                x.step()
-        elif self.encoder_to_latents == "Latents":
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                self.optimiser_enc_to_lat.step()
+            else:
+                for x in self.optimiser_enc_to_lats:
+                    x.step()
+        elif self.to_latents == "EncoderLatents":
             for x in self.optimiser_enc_lats_to_lats:
                 x.step()
+        if self.to_latents == "Latents":
+            self.optimiser_lats_to_lats.step()
         for x in self.optimiser_lats_to_dec:
             x.step()
-        if not self.encoder_encoder_to_encoder:
-            self.optimiser_lats_to_lats.step()
         self.optimiser_decoder.step()
 
         # Fix KLDs and gradients
@@ -349,11 +370,12 @@ class RNN(Method):
 
         mu_images = None
         logvar_images = None
-        if not self.encoder_encoder_to_encoder:
-            # Get the image distribution to combine it later with the LatentsToLatents component
-            if self.encoder_to_latents == "One":
+        if (not self.reconstruction and (self.to_latents == "Encoder")) or (self.to_latents == "Latents"):
+            # Get the parameters of the distribution of the images for either the EncoderToEncoder or the
+            # LatentsToLatents component.
+            if not self.encoder_to_latents:
                 mu_images, logvar_images = self.enc_to_lat(x_enc_images)
-            elif self.encoder_to_latents == "Many":
+            else:
                 mu_images, logvar_images = [], []
 
                 for enc_to_lat in self.enc_to_lats:
@@ -363,58 +385,70 @@ class RNN(Method):
 
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
 
-        # Get the blank canvas
-        ones = torch.ones(images.shape[0], 1, device=self.device)
-        canvas = self.canvas(ones)
-        canvas_reshaped = canvas.reshape(images.shape)
+        outputs = None
+        if self.reconstruction:
+            # Get the blank canvas
+            ones = torch.ones(images.shape[0], 1, device=self.device)
+            canvas = self.canvas(ones)
+            canvas_reshaped = canvas.reshape(images.shape)
+            outputs = [canvas_reshaped]
 
         mu = None
         logvar = None
-        outputs = [canvas_reshaped]
-        z_dec = None
+        logits_output = None
         # Used when resample == False
         zs = None
 
-        model = model if model is not None else self.num_groups - 1
-        for group in range(model + 1):
+        model_temp = model if model is not None else (self.num_groups - 1)
+        for group in range(model_temp + 1):
             mu_2, logvar_2 = None, None
             start = group * self.num_latents_group
             end = (group * self.num_latents_group) + self.num_latents_group
 
-            if self.reconstruction:
-                # Get encoder output of reconstruction
+            if not self.reconstruction:
+                if self.to_latents == "Encoder":
+                    if not self.encoder_to_latents:
+                        mu_2, logvar_2 = mu_images, logvar_images
+                    else:
+                        mu_2, logvar_2 = mu_images[:, start:end], logvar_images[:, start:end]
+                elif self.to_latents == "EncoderLatents":
+                    mu_temp = mu if mu is not None else None
+                    logvar_temp = logvar if logvar is not None else None
+                    mu_2, logvar_2 = self.enc_lats_to_lats[group](x_enc_images, mu_temp, logvar_temp)
+            else:
+                # Get the encoder output of the reconstruction
                 output_images = torch.sigmoid(outputs[-1])
-                if self.encoders:
-                    x_enc_rec = self.encoder_2(output_images)
-                else:
+                if not self.encoders:
                     x_enc_rec = self.encoder(output_images)
-
-                # Combine the image and reconstruction encodings or use the reconstruction encoding
-                x_enc_temp = \
-                    self.enc_enc_to_enc(x_enc_images, x_enc_rec) if self.encoder_encoder_to_encoder else x_enc_rec
+                else:
+                    x_enc_rec = self.encoder_2(output_images)
 
                 mu_1, logvar_1 = None, None
-                if self.encoder_to_latents == "One":
-                    mu_1, logvar_1 = self.enc_to_lat(x_enc_temp)
-                elif self.encoder_to_latents == "Many":
-                    mu_1, logvar_1 = self.enc_to_lats[group](x_enc_temp)
-                elif self.encoder_to_latents == "Latents":
-                    mu_1, logvar_1 = self.enc_lats_to_lats[group](x_enc_temp, mu, logvar)
+                if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+                    x_enc = None
+                    if (self.to_latents == "Encoder"):
+                        x_enc = self.enc_enc_to_enc(x_enc_images, x_enc_rec)
+                    elif (self.to_latents == "Latents"):
+                        x_enc = x_enc_rec
 
-                if not self.encoder_encoder_to_encoder:
-                    # Use the LatentsToLatents component to get a combined images and reconstruction distribution
-                    if self.encoder_to_latents == "One":
+                    if not self.encoder_to_latents:
+                        mu_1, logvar_1 = self.enc_to_lat(x_enc)
+                    else:
+                        mu_1, logvar_1 = self.enc_to_lats[group](x_enc)
+
+                if self.to_latents == "Encoder":
+                    mu_2, logvar_2 = mu_1, logvar_1
+                elif self.to_latents == "EncoderLatents":
+                    x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    mu_temp = mu if mu is not None else None
+                    logvar_temp = logvar if logvar is not None else None
+                    mu_2, logvar_2 = self.enc_lats_to_lats[group](x, mu_temp, logvar_temp)
+                elif self.to_latents == "Latents":
+                    if not self.encoder_to_latents:
                         mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
-                    elif self.encoder_to_latents == "Many":
+                    else:
                         mu_2, logvar_2 = self.lats_to_lats(
                             mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
-                else:
-                    mu_2, logvar_2 = mu_1, logvar_1
-            else:
-                if self.encoder_to_latents == "One":
-                    mu_2, logvar_2 = mu_images, logvar_images
-                elif self.encoder_to_latents == "Many":
-                    mu_2, logvar_2 = mu_images[:, start:end], logvar_images[:, start:end]
 
             mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
             logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2
@@ -436,12 +470,14 @@ class RNN(Method):
 
             logits = self.z_dec_to_logits(z_dec)
 
-            # Reshape logits and add to outputs
-            logits_reshaped = logits.reshape(images.shape)
-            outputs.append(logits_reshaped)
+            if self.reconstruction:
+                # Reshape logits and add to outputs
+                logits_reshaped = logits.reshape(images.shape)
+                outputs.append(logits_reshaped)
 
-        # Reshape the final output
-        logits_reshaped = outputs[-1].reshape(-1, self.channels * (self.size ** 2))
+            if group == model_temp:
+                # Get the final output
+                logits_output = logits.reshape(-1, self.channels * (self.size ** 2))
 
         # THIS IS WRONG, WON'T WORK AS EXPECTED!
         output = {
@@ -449,13 +485,13 @@ class RNN(Method):
             "mu": mu,
             "logvar": logvar,
             # "z": z,
-            "z_dec": z_dec,
-            "logits": logits_reshaped
+            # "z_dec": z_dec,
+            "logits": logits_output
         }
 
         # Calculate loss
         loss, log_prob, KLD = self.ELBO(
-            logits_reshaped,
+            logits_output,
             images.view(-1, self.channels * (self.size ** 2)),
             log_prob_fn=self.log_prob_fn,
             KLD_fn="N",
@@ -470,17 +506,18 @@ class RNN(Method):
         torch.save(self.encoder.state_dict(), f"{path}.pth")
         if self.encoders:
             torch.save(self.encoder_2.state_dict(), f"{path}_enc_2.pth")
-        if self.encoder_encoder_to_encoder:
+        if self.reconstruction and (self.to_latents == "Encoder"):
             torch.save(self.enc_enc_to_enc.state_dict(), f"{path}_enc_enc_to_enc.pth")
-        if self.encoder_to_latents == "One":
-            torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
-        elif self.encoder_to_latents == "Many":
-            for i, x in enumerate(self.enc_to_lats):
-                torch.save(x.state_dict(), f"{path}_enc_to_lats_{i}.pth")
-        elif self.encoder_to_latents == "Latents":
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
+            else:
+                for i, x in enumerate(self.enc_to_lats):
+                    torch.save(x.state_dict(), f"{path}_enc_to_lats_{i}.pth")
+        elif self.to_latents == "EncoderLatents":
             for i, x in enumerate(self.enc_lats_to_lats):
                 torch.save(x.state_dict(), f"{path}_enc_lats_to_lats_{i}.pth")
-        if not self.encoder_encoder_to_encoder:
+        if self.to_latents == "Latents":
             torch.save(self.lats_to_lats.state_dict(), f"{path}_lats_to_lats.pth")
         for i, x in enumerate(self.lats_to_dec):
             torch.save(x.state_dict(), f"{path}_lat_to_dec_{i}.pth")
@@ -491,17 +528,18 @@ class RNN(Method):
         self.encoder.load_state_dict(torch.load(f"{path}.pth"))
         if self.encoders:
             self.encoder_2.load_state_dict(torch.load(f"{path}_enc_2.pth"))
-        if self.encoder_encoder_to_encoder:
+        if self.reconstruction and (self.to_latents == "Encoder"):
             self.enc_enc_to_enc.load_state_dict(torch.load(f"{path}_enc_enc_to_enc.pth"))
-        if self.encoder_to_latents == "One":
-            self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
-        elif self.encoder_to_latents == "Many":
-            for i, x in enumerate(self.enc_to_lats):
-                x.load_state_dict(torch.load(f"{path}_enc_to_lats_{i}.pth"))
-        elif self.encoder_to_latents == "Latents":
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
+            else:
+                for i, x in enumerate(self.enc_to_lats):
+                    x.load_state_dict(torch.load(f"{path}_enc_to_lats_{i}.pth"))
+        elif self.to_latents == "EncoderLatents":
             for i, x in enumerate(self.enc_lats_to_lats):
                 x.load_state_dict(torch.load(f"{path}_enc_lats_to_lats_{i}.pth"))
-        if not self.encoder_encoder_to_encoder:
+        if self.to_latents == "Latents":
             self.lats_to_lats.load_state_dict(torch.load(f"{path}_lats_to_lats.pth"))
         for i, x in enumerate(self.lats_to_dec):
             x.load_state_dict(torch.load(f"{path}_lat_to_dec_{i}.pth"))
@@ -514,21 +552,22 @@ class RNN(Method):
         if self.encoders:
             summaries.append("Encoder 2")
             summaries.append(str(summary(self.encoder_2)))
-        if self.encoder_encoder_to_encoder:
+        if self.reconstruction and (self.to_latents == "Encoder"):
             summaries.append("Encoder Encoder to Encoder")
             summaries.append(str(summary(self.enc_enc_to_enc)))
-        if self.encoder_to_latents == "One":
-            summaries.append(f"Encoder to Latent")
-            summaries.append(str(summary(self.enc_to_lat)))
-        elif self.encoder_to_latents == "Many":
-            for i, x in enumerate(self.enc_to_lats):
-                summaries.append(f"Encoder to Latents {i}")
-                summaries.append(str(summary(x)))
-        elif self.encoder_to_latents == "Latents":
+        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
+            if not self.encoder_to_latents:
+                summaries.append(f"Encoder to Latent")
+                summaries.append(str(summary(self.enc_to_lat)))
+            else:
+                for i, x in enumerate(self.enc_to_lats):
+                    summaries.append(f"Encoder to Latents {i}")
+                    summaries.append(str(summary(x)))
+        elif self.to_latents == "EncoderLatents":
             for i, x in enumerate(self.enc_lats_to_lats):
                 summaries.append(f"Encoder Latents to Latents {i}")
                 summaries.append(str(summary(x)))
-        if not self.encoder_encoder_to_encoder:
+        if self.to_latents == "Latents":
             summaries.append("Latents to Latents")
             summaries.append(str(summary(self.lats_to_lats)))
         for i, x in enumerate(self.lats_to_dec):
@@ -563,3 +602,15 @@ class RNN(Method):
     @torch.no_grad()
     def z_dec_to_logits(self, z_dec):
         return self.decoder(z_dec)
+
+    @torch.no_grad()
+    def z_decs_to_logits(self, z_decs, groups):
+        z_dec = None
+
+        for i in range(groups):
+            if z_dec == None:
+                z_dec = z_decs[i]
+            else:
+                z_dec = z_dec + z_decs[i]
+
+        return self.z_dec_to_logits(z_dec)

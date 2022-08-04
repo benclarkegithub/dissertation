@@ -13,7 +13,8 @@ class Evaluate:
     def __init__(self, method, experiment, *, log=True, seed=None):
         self.method = method
         self.experiment = experiment
-        self.path = f"{experiment}/{type(method).__name__}_{experiment}"
+        self.path = experiment
+        self.params_path = self.path + "/" + "Parameters"
         self.log = log
         if seed is not None:
             self.seed_everything(seed)
@@ -130,6 +131,10 @@ class Evaluate:
                     avg_train_KLDs=avg_train_KLD[model][-1],
                     avg_val_KLDs=avg_val_KLD[model][-1],
                     grad=grad_param)
+
+                # Reset current_epoch if it's the last epoch
+                if epoch == max_epochs:
+                    current_epoch = 0
 
                 # Save training progress
                 self.save(best=False)
@@ -273,7 +278,7 @@ class Evaluate:
             plt.xticks(ticks=x_ticks, labels=x_labels)
             plt.yticks(ticks=y_ticks, labels=y_labels)
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-            plt.savefig(f"{self.path}_Reconstruction.png")
+            plt.savefig(f"{self.path}/Reconstruction.png")
             plt.show()
 
         if output_images:
@@ -321,7 +326,7 @@ class Evaluate:
                 plt.xticks(ticks=x_ticks, labels=X)
                 plt.yticks(ticks=y_ticks, labels=X)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(f"{self.path}_Output_Images_z{z_i+1}_z{z_i+2}.png")
+                plt.savefig(f"{self.path}/Output_Images_z{z_i+1}_z{z_i+2}.png")
                 plt.show()
 
         # This is only compatible with the Single method
@@ -439,7 +444,7 @@ class Evaluate:
                 images_temp,
                 order,
                 f"{type(self.method).__name__} {self.experiment} conceptual compression",
-                f"{self.path}_Conceptual_Compression.png")
+                f"{self.path}/Conceptual_Compression.png")
 
             if random_opt:
                 # Get random order
@@ -450,7 +455,7 @@ class Evaluate:
                     images_temp,
                     order,
                     f"{type(self.method).__name__} {self.experiment} conceptual compression (random order)",
-                    f"{self.path}_Conceptual_Compression_Random.png")
+                    f"{self.path}/Conceptual_Compression_Random.png")
 
             if separate:
                 # Get separate images
@@ -460,19 +465,20 @@ class Evaluate:
                     images_temp,
                     order,
                     f"{type(self.method).__name__} {self.experiment} conceptual compression (separate)",
-                    f"{self.path}_Conceptual_Compression_Separate.png")
+                    f"{self.path}/Conceptual_Compression_Separate.png")
 
     def save(self, best, verbose=False):
-        path = self.path + "_Best" if best else self.path
+        path = f"{self.params_path}/Best" if best else f"{self.params_path}/Train"
         if verbose:
             print(f"Saving model... {path}")
-        # Get the directory name and if it doesn't exist create it
-        make_dir(path)
+        # Create the directory if it doesn't exist
+        make_dir(self.path)
+        make_dir(self.params_path)
         # Save
         self.method.save(path)
 
     def load(self, best, verbose=False):
-        path = self.path + "_Best" if best else self.path
+        path = f"{self.params_path}/Best" if best else f"{self.params_path}/Train"
         # Check that the path exists and load the model if it does
         if exists(f"{path}.pth"):
             if verbose:
@@ -514,14 +520,14 @@ class Evaluate:
             "epoch_time": epoch_time,
         }
 
-        with open(f"{self.path}.pkl", "wb") as file:
+        with open(f"{self.path}/Training.pkl", "wb") as file:
             pickle.dump(training_progress, file)
 
     def load_training(self):
         training_progress = None
 
-        if exists(f"{self.path}.pkl"):
-            with open(f"{self.path}.pkl", "rb") as file:
+        if exists(f"{self.path}/Training.pkl"):
+            with open(f"{self.path}/Training.pkl", "rb") as file:
                 training_progress = pickle.load(file)
 
         return training_progress
@@ -602,11 +608,11 @@ class Evaluate:
             make_dir(self.path)
 
             # Check to see if the log file exists
-            if exists(f"{self.path}.log"):
-                with open(f"{self.path}.log", "a") as file:
+            if exists(f"{self.path}/Training.log"):
+                with open(f"{self.path}/Training.log", "a") as file:
                     file.write(f"{message}\n")
             else:
-                with open(f"{self.path}.log", "w") as file:
+                with open(f"{self.path}/Training.log", "w") as file:
                     file.write(f"{message}\n")
 
     def plot_training_ELBO(self, avg_train_loss, avg_val_loss, *, avg_train_log_prob=None, avg_val_log_prob=None):
@@ -643,7 +649,7 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. ELBO")
         plt.legend()
-        plt.savefig(f"{self.path}_ELBO.png")
+        plt.savefig(f"{self.path}/ELBO.png")
         plt.show()
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
@@ -663,7 +669,7 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
         plt.legend()
-        plt.savefig(f"{self.path}_KLD_train.png")
+        plt.savefig(f"{self.path}/KLD_train.png")
         plt.show()
 
         # Validation
@@ -681,7 +687,7 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
         plt.legend()
-        plt.savefig(f"{self.path}_KLD_val.png")
+        plt.savefig(f"{self.path}/KLD_val.png")
         plt.show()
 
     def plot_grad(self, grad):
@@ -700,5 +706,5 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. gradient norm")
         plt.legend()
-        plt.savefig(f"{self.path}_grad.png")
+        plt.savefig(f"{self.path}/Gradient.png")
         plt.show()

@@ -33,7 +33,8 @@ class Multiple(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
-                 std=0.05):
+                 std=0.05,
+                 hidden_size=None):
         super().__init__(num_latents=num_latents, type="Multiple")
 
         self.num_latents_group = num_latents_group
@@ -43,8 +44,15 @@ class Multiple(Method):
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
-        self.VAEs = [VAE(num_latents, self.num_latents_group, size=size, channels=channels, out_channels=out_channels)
+        self.VAEs = [VAE(
+            num_latents,
+            self.num_latents_group,
+            size=size,
+            channels=channels,
+            out_channels=out_channels,
+            hidden_size=self.hidden_size)
                      for _ in range(self.num_groups)]
         self.optimisers = [optim.Adam(x.parameters(), lr=learning_rate) for x in self.VAEs]
 

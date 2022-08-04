@@ -6,9 +6,8 @@ import torch
 
 
 def make_dir(path):
-    path_split = path.split("/")
-    if not isdir(path_split[0]):
-        mkdir(path_split[0])
+    if not isdir(path):
+        mkdir(path)
 
 
 def seed_worker(worker_id):

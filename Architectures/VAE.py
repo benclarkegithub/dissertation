@@ -13,17 +13,19 @@ class VAE(nn.Module):
                  *,
                  size=28,
                  channels=1,
-                 out_channels=None):
+                 out_channels=None,
+                 hidden_size=None):
         super().__init__()
 
         self.num_latents = num_latents
         self.num_latents_group = num_latents if num_latents_group is None else num_latents_group
         self.num_groups = num_latents // self.num_latents_group
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
-        self.encoder = Encoder(num_latents, size, channels, out_channels)
-        self.enc_to_lat = [EncoderToLatents(num_latents, self.num_latents_group) for _ in range(self.num_groups)]
-        self.lat_to_dec = [LatentsToDecoder(num_latents, self.num_latents_group) for _ in range(self.num_groups)]
-        self.decoder = Decoder(num_latents, size, channels, out_channels)
+        self.encoder = Encoder(size, channels, self.hidden_size, out_channels)
+        self.enc_to_lat = [EncoderToLatents(self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
+        self.lat_to_dec = [LatentsToDecoder(self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
+        self.decoder = Decoder(self.hidden_size, size, channels, out_channels)
 
     def forward(self, x, *, reparameterise=True):
         # x to x_enc, mu, logvar

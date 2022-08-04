@@ -6,15 +6,33 @@ from Method import Method
 
 
 class Standard(Method):
-    def __init__(self, VAE, num_latents, *, learning_rate=1e-3, size=28, channels=1, out_channels=None, log_prob_fn="CB", std=0.05):
+    def __init__(self,
+                 VAE,
+                 num_latents,
+                 *,
+                 learning_rate=1e-3,
+                 size=28,
+                 channels=1,
+                 out_channels=None,
+                 log_prob_fn="CB",
+                 std=0.05,
+                 hidden_size=None):
         super().__init__(num_latents=num_latents, type="Single")
 
-        self.VAE = VAE(num_latents, self.num_latents_group, size=size, channels=channels, out_channels=out_channels)
         self.optimiser = optim.Adam(self.VAE.parameters(), lr=learning_rate)
         self.size = size
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
+
+        self.VAE = VAE(
+            num_latents,
+            self.num_latents_group,
+            size=size,
+            channels=channels,
+            out_channels=out_channels,
+            hidden_size=self.hidden_size)
 
     def train(self, i, data, *, get_grad=False):
         # Get the input images
