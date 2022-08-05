@@ -181,6 +181,7 @@ class Evaluate:
              test_loader,
              *,
              avg_var=True,
+             avg_var_opt=None,
              reconstruction=True,
              reconstruction_opt=None,
              output_images=True,
@@ -191,7 +192,7 @@ class Evaluate:
         self.load(best=True, verbose=True)
 
         if avg_var:
-            self.test_avg_var(test_loader)
+            self.test_avg_var(test_loader, avg_var_opt)
 
         if reconstruction:
             self.test_reconstruction(test_loader, reconstruction_opt)
@@ -202,46 +203,78 @@ class Evaluate:
         if conceptual_compression:
             self.test_conceptual_compression(test_loader, conceptual_compression_opt)
 
-    def test_avg_var(self, test_loader):
+    def test_avg_var(self, test_loader, avg_var_opt):
+        if avg_var_opt is None:
+            avg_var_opt = { "mu/var": True, "z": False }
+
+        mu_var = avg_var_opt["mu/var"]
+        z_opt = avg_var_opt["z"]
+
         # Calculate mu, var, z mean and variance
         mu = None
         logvar = None
+        z = None
 
         for i, data in enumerate(test_loader):
             output, loss, log_prob, KLD = self.method.test(i=i, data=data)
 
             if (i == 0):
-                mu = output["mu"]
-                logvar = output["logvar"]
+                if mu_var:
+                    mu = output["mu"]
+                    logvar = output["logvar"]
+
+                if z_opt:
+                    z = output["z"]
             else:
-                mu = torch.vstack([mu, output["mu"]])
-                logvar = torch.vstack([logvar, output["logvar"]])
+                if mu_var:
+                    mu = torch.vstack([mu, output["mu"]])
+                    logvar = torch.vstack([logvar, output["logvar"]])
 
-        var = torch.exp(logvar)
-        avg_mu = mu.mean(dim=0)
-        avg_var = var.mean(dim=0)
-        max_mu = mu.max(dim=0)
-        max_var = var.max(dim=0)
-        min_mu = mu.min(dim=0)
-        min_var = var.min(dim=0)
-        cov_mu = np.cov(mu.T)
+                if z_opt:
+                    z = torch.vstack([z, output["z"]])
 
-        torch.set_printoptions(precision=3, profile="short", sci_mode=False)
-        np.set_printoptions(precision=3, formatter={"all": lambda x: f"{x:.3f}"})
+        # Set print options
+        torch.set_printoptions(precision=3, profile="short", sci_mode=False, threshold=torch.inf)
+        np.set_printoptions(precision=3, formatter={"all": lambda x: f"{x:.3f}"}, threshold=np.inf)
 
-        message = f"Avg. mu: {', '.join([f'{x:.3f}' for x in avg_mu.tolist()])}\n" \
-                  f"Avg. var: {', '.join([f'{x:.3f}' for x in avg_var.tolist()])}\n" \
-                  f"Max. mu: {', '.join([f'{x:.3f}' for x in max_mu.values.tolist()])}\n" \
-                  f"Max. var: {', '.join([f'{x:.3f}' for x in max_var.values.tolist()])}\n" \
-                  f"Min. mu: {', '.join([f'{x:.3f}' for x in min_mu.values.tolist()])}\n" \
-                  f"Min. var: {', '.join([f'{x:.3f}' for x in min_var.values.tolist()])}\n" \
-                  f"Cov. mu:\n{cov_mu}"
+        if mu_var:
+            var = torch.exp(logvar)
+            avg_mu = mu.mean(dim=0)
+            avg_var = var.mean(dim=0)
+            max_mu = mu.max(dim=0)
+            max_var = var.max(dim=0)
+            min_mu = mu.min(dim=0)
+            min_var = var.min(dim=0)
+            cov_mu = np.cov(mu.T)
 
+            message = f"Avg. mu: {', '.join([f'{x:.3f}' for x in avg_mu.tolist()])}\n" \
+                      f"Avg. var: {', '.join([f'{x:.3f}' for x in avg_var.tolist()])}\n" \
+                      f"Max. mu: {', '.join([f'{x:.3f}' for x in max_mu.values.tolist()])}\n" \
+                      f"Max. var: {', '.join([f'{x:.3f}' for x in max_var.values.tolist()])}\n" \
+                      f"Min. mu: {', '.join([f'{x:.3f}' for x in min_mu.values.tolist()])}\n" \
+                      f"Min. var: {', '.join([f'{x:.3f}' for x in min_var.values.tolist()])}\n" \
+                      f"Cov. mu:\n{cov_mu}"
+
+            # Log message
+            self.write_log(message)
+
+        if z_opt:
+            avg_z = z.mean(dim=0)
+            max_z = z.max(dim=0)
+            min_z = z.min(dim=0)
+            cov_z = np.cov(z.T)
+
+            message = f"Avg. z: {', '.join([f'{x:.3f}' for x in avg_z.tolist()])}\n" \
+                      f"Max. z: {', '.join([f'{x:.3f}' for x in max_z.values.tolist()])}\n" \
+                      f"Min. z: {', '.join([f'{x:.3f}' for x in min_z.values.tolist()])}\n" \
+                      f"Cov. z:\n{cov_z}"
+
+            # Log message
+            self.write_log(message)
+
+        # Set print options to default
         torch.set_printoptions()
         np.set_printoptions()
-
-        # Log message
-        self.write_log(message)
 
     def test_reconstruction(self, test_loader, reconstruction_opt):
         if not reconstruction_opt:
