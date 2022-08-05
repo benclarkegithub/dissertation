@@ -234,11 +234,12 @@ class Evaluate:
         if reconstruction:
             if not reconstruction_opt:
                 # Set reconstruction options if it doesn't exist
-                reconstruction_opt = { "number": 10, "size": 28, "channels": 1 }
+                reconstruction_opt = { "number": 10, "size": 28, "channels": 1, "z": "mu" }
 
             number = reconstruction_opt["number"]
             size = reconstruction_opt["size"]
             channels = reconstruction_opt["channels"]
+            z = reconstruction_opt["z"]
             size_with_padding = size + 2
 
             # Get the data
@@ -253,9 +254,12 @@ class Evaluate:
 
             # Get the output
             output, loss, log_prob, KLD = self.method.test(i=0, data=data)
-            mu = output["mu"]
 
-            _, logits = self.method.z_to_logits(mu[:number])
+            if z == "mu":
+                mu = output["mu"]
+                _, logits = self.method.z_to_logits(mu[:number])
+            else: # z == "Sample"
+                logits = output["logits"][:number]
 
             # Add to grid of images
             if channels == 1:
@@ -278,8 +282,8 @@ class Evaluate:
             plt.xticks(ticks=x_ticks, labels=x_labels)
             plt.yticks(ticks=y_ticks, labels=y_labels)
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-            plt.savefig(f"{self.path}/Reconstruction.png")
-            plt.show()
+            plt.savefig(f"{self.path}/Reconstruction.png", dpi=300)
+            plt.show(dpi=300)
 
         if output_images:
             if not output_images_opt:
@@ -326,14 +330,14 @@ class Evaluate:
                 plt.xticks(ticks=x_ticks, labels=X)
                 plt.yticks(ticks=y_ticks, labels=X)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(f"{self.path}/Output_Images_z{z_i+1}_z{z_i+2}.png")
-                plt.show()
+                plt.savefig(f"{self.path}/Output_Images_z{z_i+1}_z{z_i+2}.png", dpi=300)
+                plt.show(dpi=300)
 
         # This is only compatible with the Single method
         if conceptual_compression:
             if not conceptual_compression_opt:
                 # Set conceptual compression options if it doesn't exist
-                conceptual_compression_opt = { "number": 8, "size": 28, "channels": 1, "random": True, "separate": True }
+                conceptual_compression_opt = { "number": 8, "size": 28, "channels": 1, "random": True, "separate": True, "z": "mu" }
 
             # Get conceptual compression options
             number = conceptual_compression_opt["number"]
@@ -341,6 +345,7 @@ class Evaluate:
             channels = conceptual_compression_opt["channels"]
             random_opt = conceptual_compression_opt["random"]
             separate = conceptual_compression_opt["separate"]
+            z = conceptual_compression_opt["z"]
             rows = (1 + self.method.get_num_groups()) # Original and each group
             columns = number
             size_with_padding = size + 2
@@ -359,7 +364,7 @@ class Evaluate:
 
             # Get the output
             output, loss, log_prob, KLD = self.method.test(i=0, data=data)
-            mu = output["mu"]
+            z_temp = output["mu"] if (z == "mu") else output["z"]
 
             def get_images_from_order(images, order):
                 images_temp = images.detach().clone()
@@ -374,13 +379,13 @@ class Evaluate:
 
                     if self.method.get_type() == "Single":
                         if not len(z_decs):
-                            z_decs.append(self.method.z_to_z_dec(mu[:number, start:end], group=group))
+                            z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
                         else:
-                            z_decs[0] = z_decs[0] + self.method.z_to_z_dec(mu[:number, start:end], group=group)
+                            z_decs[0] = z_decs[0] + self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
 
                         logits = self.method.z_dec_to_logits(z_decs[0])
                     else:
-                        z_decs.append(self.method.z_to_z_dec(mu[:number, start:end], group=group))
+                        z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
                         groups.append(group)
 
                         logits = self.method.z_decs_to_logits(z_decs, groups)
@@ -403,7 +408,7 @@ class Evaluate:
                     start = group * self.method.get_num_latents_group()
                     end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
 
-                    z_dec = self.method.z_to_z_dec(mu[:number, start:end], group=group)
+                    z_dec = self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
 
                     if self.method.get_type() == "Single":
                         logits = self.method.z_dec_to_logits(z_dec)
@@ -435,8 +440,8 @@ class Evaluate:
                 plt.xticks(ticks=x_ticks, labels=x_labels)
                 plt.yticks(ticks=y_ticks, labels=y_labels)
                 plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(path)
-                plt.show()
+                plt.savefig(path, dpi=300)
+                plt.show(dpi=300)
 
             order = range(self.method.get_num_groups())
             images_temp = get_images_from_order(images, order)
@@ -649,8 +654,8 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. ELBO")
         plt.legend()
-        plt.savefig(f"{self.path}/ELBO.png")
-        plt.show()
+        plt.savefig(f"{self.path}/ELBO.png", dpi=300)
+        plt.show(dpi=300)
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
         # Training
@@ -669,8 +674,8 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
         plt.legend()
-        plt.savefig(f"{self.path}/KLD_train.png")
-        plt.show()
+        plt.savefig(f"{self.path}/KLD_train.png", dpi=300)
+        plt.show(dpi=300)
 
         # Validation
         avg_val_KLD = [np.stack(x) for x in avg_val_KLD]
@@ -687,8 +692,8 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
         plt.legend()
-        plt.savefig(f"{self.path}/KLD_val.png")
-        plt.show()
+        plt.savefig(f"{self.path}/KLD_val.png", dpi=300)
+        plt.show(dpi=300)
 
     def plot_grad(self, grad):
         grad = [np.stack(x) for x in grad]
@@ -706,5 +711,5 @@ class Evaluate:
         plt.xlabel("Epoch")
         plt.ylabel("Avg. gradient norm")
         plt.legend()
-        plt.savefig(f"{self.path}/Gradient.png")
-        plt.show()
+        plt.savefig(f"{self.path}/Gradient.png", dpi=300)
+        plt.show(dpi=300)

@@ -315,6 +315,8 @@ class Quotient(Method):
                 zs = torch.cat([zs, z[:, start:end]], dim=1) if zs is not None else z
                 log_qs = torch.cat([log_qs, log_q[:, start:end]], dim=1) if log_qs is not None else log_q
                 log_ps = torch.cat([log_ps, log_p[:, start:end]], dim=1) if log_ps is not None else log_p
+            else:
+                zs = z
 
             # Can't use `z_to_logits` here because it assumes a fully-dimensional z
             z_temp = z if self.resample else zs
@@ -339,7 +341,7 @@ class Quotient(Method):
             "x_enc": x_enc,
             "mu": mu,
             "logvar": logvar,
-            # "z": z,
+            "z": zs,
             "z_dec": z_dec,
             "logits": logits_reshaped
         }
