@@ -17,6 +17,20 @@ class Canvas(nn.Module):
         return x
 
 
+class KL(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.fc_mu = nn.Linear(1, 1, bias=False)
+        self.fc_logvar = nn.Linear(1, 1, bias=False)
+
+    def forward(self, x):
+        mu = self.fc_mu(x)
+        logvar = self.fc_logvar(x)
+
+        return mu, logvar
+
+
 class Encoder(nn.Module):
     def __init__(self, size, channels, hidden_size, out_channels):
         super().__init__()
@@ -143,7 +157,13 @@ class Decoder(nn.Module):
 
 
 class VAE(VAE2):
-    def __init__(self, num_latents, num_latents_group=None, *, size=28, channels=1, out_channels=None):
+    def __init__(self,
+                 num_latents,
+                 num_latents_group=None,
+                 *, size=28,
+                 channels=1,
+                 out_channels=None,
+                 hidden_size=None):
         super().__init__(
             num_latents,
             num_latents_group,
@@ -153,4 +173,5 @@ class VAE(VAE2):
             Decoder,
             size=size,
             channels=channels,
-            out_channels=out_channels)
+            out_channels=out_channels,
+            hidden_size=hidden_size)

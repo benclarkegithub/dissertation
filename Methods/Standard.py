@@ -19,7 +19,6 @@ class Standard(Method):
                  hidden_size=None):
         super().__init__(num_latents=num_latents, type="Single")
 
-        self.optimiser = optim.Adam(self.VAE.parameters(), lr=learning_rate)
         self.size = size
         self.channels = channels
         self.log_prob_fn = log_prob_fn
@@ -33,6 +32,7 @@ class Standard(Method):
             channels=channels,
             out_channels=out_channels,
             hidden_size=self.hidden_size)
+        self.optimiser = optim.Adam(self.VAE.parameters(), lr=learning_rate)
 
     def train(self, i, data, *, get_grad=False):
         # Get the input images

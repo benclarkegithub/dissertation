@@ -107,7 +107,13 @@ class Decoder(nn.Module):
 
 
 class VAE(VAE2):
-    def __init__(self, num_latents, num_latents_group=None, *, size=28, channels=1, out_channels=8):
+    def __init__(self,
+                 num_latents,
+                 num_latents_group=None,
+                 *, size=28,
+                 channels=1,
+                 out_channels=None,
+                 hidden_size=None):
         super().__init__(
             num_latents,
             num_latents_group,
@@ -117,4 +123,5 @@ class VAE(VAE2):
             Decoder,
             size=size,
             channels=channels,
-            out_channels=out_channels)
+            out_channels=out_channels,
+            hidden_size=hidden_size)

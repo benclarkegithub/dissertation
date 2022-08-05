@@ -16,6 +16,10 @@ encoder_to_latents
 resample:
     True:   Resample z at each step
     False:  Do not resample z at each step (reuse previous zs)
+    
+learnable_KL:
+    True:   Learnable KL parameters N(a, b) / N(mu_rec, std_rec)
+    False:  Standard Normal KL parameters N(0, 1) / N(mu_rec, std_rec)
 """
 class Quotient(Method):
     def __init__(self,
@@ -25,6 +29,7 @@ class Quotient(Method):
                  # Options
                  encoder_to_latents,
                  resample,
+                 learnable_KL,
                  *,
                  learning_rate=1e-3,
                  size=28,
@@ -47,8 +52,11 @@ class Quotient(Method):
         # Options
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
+        self.learnable_KL = learnable_KL
 
         self.canvas = architecture["Canvas"](size, channels)
+        if self.learnable_KL:
+            self.KL = architecture["KL"]()
         self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels)
         if not self.encoder_to_latents:
             self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group)
@@ -60,6 +68,8 @@ class Quotient(Method):
         self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels)
 
         self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
+        if self.learnable_KL:
+            self.optimiser_KL = optim.Adam(self.KL.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
@@ -82,6 +92,8 @@ class Quotient(Method):
 
         # Zero the parameter's gradients
         self.optimiser_canvas.zero_grad()
+        if self.learnable_KL:
+            self.optimiser_KL.zero_grad()
         self.optimiser_encoder.zero_grad()
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.zero_grad()
@@ -220,6 +232,8 @@ class Quotient(Method):
 
         # Step
         self.optimiser_canvas.step()
+        if self.learnable_KL:
+            self.optimiser_KL.step()
         self.optimiser_encoder.step()
         if not self.encoder_to_latents:
             self.optimiser_enc_to_lat.step()
@@ -428,11 +442,20 @@ class Quotient(Method):
 
     def z_mu_logvar_to_log_p(self, z, mu, logvar):
         # For KL divergence
-        # N(0, 1) / N(mu, std)
-        mu_standard, std_standard = torch.zeros(mu.shape), torch.ones(logvar.shape)
+        mu_temp, std_temp = None, None
+        if not self.learnable_KL:
+            # N(0, 1) / N(mu_rec, std_rec)
+            mu_temp, std_temp = torch.zeros(mu.shape), torch.ones(logvar.shape)
+        else:
+            # N(a, b) / N(mu_rec, std_rec)
+            # Get the mu and logvar for KL divergence
+            one = torch.tensor([1.0])
+            mu, logvar = self.KL(one)
+            mu_temp, std_temp = mu, logvar.exp().sqrt()
+
         std = logvar.exp().sqrt()
 
-        p = self.z_mu_std_to_quotient_prob(z, mu_standard, std_standard, mu, std)
+        p = self.z_mu_std_to_quotient_prob(z, mu_temp, std_temp, mu, std)
         log_p = p.log()
 
         return log_p
