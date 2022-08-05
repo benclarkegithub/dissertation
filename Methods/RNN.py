@@ -607,7 +607,7 @@ class RNN(Method):
     def z_decs_to_logits(self, z_decs, groups):
         z_dec = None
 
-        for i in range(groups):
+        for i in range(len(z_decs)):
             if z_dec == None:
                 z_dec = z_decs[i]
             else:
