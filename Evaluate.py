@@ -191,286 +191,298 @@ class Evaluate:
         self.load(best=True, verbose=True)
 
         if avg_var:
-            # Calculate mu, var, z mean and variance
-            mu = None
-            logvar = None
-
-            for i, data in enumerate(test_loader):
-                output, loss, log_prob, KLD = self.method.test(i=i, data=data)
-
-                if (i == 0):
-                    mu = output["mu"]
-                    logvar = output["logvar"]
-                else:
-                    mu = torch.vstack([mu, output["mu"]])
-                    logvar = torch.vstack([logvar, output["logvar"]])
-
-            var = torch.exp(logvar)
-            avg_mu = mu.mean(dim=0)
-            avg_var = var.mean(dim=0)
-            max_mu = mu.max(dim=0)
-            max_var = var.max(dim=0)
-            min_mu = mu.min(dim=0)
-            min_var = var.min(dim=0)
-            cov_mu = np.cov(mu.T)
-
-            torch.set_printoptions(precision=3, profile="short", sci_mode=False)
-            np.set_printoptions(precision=3, formatter={"all": lambda x: f"{x:.3f}"})
-
-            message = f"Avg. mu: {', '.join([f'{x:.3f}' for x in avg_mu.tolist()])}\n" \
-                      f"Avg. var: {', '.join([f'{x:.3f}' for x in avg_var.tolist()])}\n" \
-                      f"Max. mu: {', '.join([f'{x:.3f}' for x in max_mu.values.tolist()])}\n" \
-                      f"Max. var: {', '.join([f'{x:.3f}' for x in max_var.values.tolist()])}\n" \
-                      f"Min. mu: {', '.join([f'{x:.3f}' for x in min_mu.values.tolist()])}\n" \
-                      f"Min. var: {', '.join([f'{x:.3f}' for x in min_var.values.tolist()])}\n" \
-                      f"Cov. mu:\n{cov_mu}"
-
-            torch.set_printoptions()
-            np.set_printoptions()
-
-            # Log message
-            self.write_log(message)
+            self.test_avg_var(test_loader)
 
         if reconstruction:
-            if not reconstruction_opt:
-                # Set reconstruction options if it doesn't exist
-                reconstruction_opt = { "number": 10, "size": 28, "channels": 1, "z": "mu" }
+            self.test_reconstruction(test_loader, reconstruction_opt)
 
-            number = reconstruction_opt["number"]
-            size = reconstruction_opt["size"]
-            channels = reconstruction_opt["channels"]
-            z = reconstruction_opt["z"]
-            size_with_padding = size + 2
+        if output_images:
+            self.test_output_images(output_images_opt)
 
-            # Get the data
-            data = next(iter(test_loader))
-            images, labels = data
+        if conceptual_compression:
+            self.test_conceptual_compression(test_loader, conceptual_compression_opt)
 
-            # Start making grid of images
-            if channels == 1:
-                images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
-            else:
-                images = images[:number].reshape(number, channels, size, size)
+    def test_avg_var(self, test_loader):
+        # Calculate mu, var, z mean and variance
+        mu = None
+        logvar = None
 
-            # Get the output
-            output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+        for i, data in enumerate(test_loader):
+            output, loss, log_prob, KLD = self.method.test(i=i, data=data)
 
-            if z == "mu":
+            if (i == 0):
                 mu = output["mu"]
-                _, logits = self.method.z_to_logits(mu[:number])
-            else: # z == "Sample"
-                logits = output["logits"][:number]
-
-            # Add to grid of images
-            if channels == 1:
-                logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+                logvar = output["logvar"]
             else:
-                logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
+                mu = torch.vstack([mu, output["mu"]])
+                logvar = torch.vstack([logvar, output["logvar"]])
 
-            images = torch.vstack([images, logits_images])
+        var = torch.exp(logvar)
+        avg_mu = mu.mean(dim=0)
+        avg_var = var.mean(dim=0)
+        max_mu = mu.max(dim=0)
+        max_var = var.max(dim=0)
+        min_mu = mu.min(dim=0)
+        min_var = var.min(dim=0)
+        cov_mu = np.cov(mu.T)
 
+        torch.set_printoptions(precision=3, profile="short", sci_mode=False)
+        np.set_printoptions(precision=3, formatter={"all": lambda x: f"{x:.3f}"})
+
+        message = f"Avg. mu: {', '.join([f'{x:.3f}' for x in avg_mu.tolist()])}\n" \
+                  f"Avg. var: {', '.join([f'{x:.3f}' for x in avg_var.tolist()])}\n" \
+                  f"Max. mu: {', '.join([f'{x:.3f}' for x in max_mu.values.tolist()])}\n" \
+                  f"Max. var: {', '.join([f'{x:.3f}' for x in max_var.values.tolist()])}\n" \
+                  f"Min. mu: {', '.join([f'{x:.3f}' for x in min_mu.values.tolist()])}\n" \
+                  f"Min. var: {', '.join([f'{x:.3f}' for x in min_var.values.tolist()])}\n" \
+                  f"Cov. mu:\n{cov_mu}"
+
+        torch.set_printoptions()
+        np.set_printoptions()
+
+        # Log message
+        self.write_log(message)
+
+    def test_reconstruction(self, test_loader, reconstruction_opt):
+        if not reconstruction_opt:
+            # Set reconstruction options if it doesn't exist
+            reconstruction_opt = {"number": 10, "size": 28, "channels": 1, "z": "mu"}
+
+        number = reconstruction_opt["number"]
+        size = reconstruction_opt["size"]
+        channels = reconstruction_opt["channels"]
+        z = reconstruction_opt["z"]
+        size_with_padding = size + 2
+
+        # Get the data
+        data = next(iter(test_loader))
+        images, labels = data
+
+        # Start making grid of images
+        if channels == 1:
+            images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
+        else:
+            images = images[:number].reshape(number, channels, size, size)
+
+        # Get the output
+        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+
+        if z == "mu":
+            mu = output["mu"]
+            _, logits = self.method.z_to_logits(mu[:number])
+        else:  # z == "Sample"
+            logits = output["logits"][:number]
+
+        # Add to grid of images
+        if channels == 1:
+            logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+        else:
+            logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
+
+        images = torch.vstack([images, logits_images])
+
+        # Make grid of images
+        images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+        plt.title(f"{type(self.method).__name__} {self.experiment} reconstruction")
+        plt.xlabel("Label")
+        stop = (number * size_with_padding) - size_with_padding
+        x_ticks = np.linspace(start=0, stop=stop, num=number) + (size_with_padding // 2) + 1
+        y_ticks = np.linspace(start=size_with_padding, stop=0, num=2) + (size_with_padding // 2) + 1
+        x_labels = [x.item() for x in labels[:number]]
+        y_labels = ["Rec", "Original"]
+        plt.xticks(ticks=x_ticks, labels=x_labels)
+        plt.yticks(ticks=y_ticks, labels=y_labels)
+        plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+        plt.savefig(f"{self.path}/Reconstruction.png", dpi=300)
+        plt.show(dpi=300)
+
+    def test_output_images(self, output_images_opt):
+        if not output_images_opt:
+            # Set output images options if it doesn't exist
+            output_images_opt = {"range": 2.5, "number": 11, "size": 28, "channels": 1}
+
+        # Get output images options
+        range_opt = output_images_opt["range"]
+        number = output_images_opt["number"]
+        size = output_images_opt["size"]
+        channels = output_images_opt["channels"]
+        total_number = number ** 2
+        size_with_padding = size + 2
+        total_size_with_padding = number * size_with_padding
+
+        # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
+        X = np.linspace(start=-range_opt, stop=range_opt, num=number, dtype=np.single)
+        Y = np.linspace(start=range_opt, stop=-range_opt, num=number, dtype=np.single)
+        Z = torch.tensor([[x, y] for y in Y for x in X])
+
+        # Output images for every pair of latent variables, i.e. (z1, z2), (z3, z4), ...
+        for z_i in np.arange(0, self.method.get_num_latents() - 1, 2):
+            Z_input = torch.zeros(total_number, self.method.get_num_latents())
+            Z_input[:, z_i:z_i + 2] = Z
+
+            # Get output
+            z_dec, logits = self.method.z_to_logits(Z_input)
+
+            # Make grid of images
+            if channels == 1:
+                images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, channels, size, size)
+            else:
+                images = torch.sigmoid(logits).reshape(total_number, channels, size, size)
+            images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+            # Create and display the 2D graph
+            plt.title(f"{type(self.method).__name__} {self.experiment} output images (z{z_i + 1} & z{z_i + 2})")
+            plt.xlabel(f"z{z_i + 1}")
+            plt.ylabel(f"z{z_i + 2}")
+            x_ticks = np.linspace(
+                start=0, stop=total_size_with_padding - size_with_padding, num=number) + (size // 2) + 1
+            y_ticks = np.linspace(
+                start=total_size_with_padding - size_with_padding, stop=0, num=number) + (size // 2) + 1
+            plt.xticks(ticks=x_ticks, labels=X)
+            plt.yticks(ticks=y_ticks, labels=X)
+            plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+            plt.savefig(f"{self.path}/Output_Images_z{z_i + 1}_z{z_i + 2}.png", dpi=300)
+            plt.show(dpi=300)
+
+    def test_conceptual_compression(self, test_loader, conceptual_compression_opt):
+        if not conceptual_compression_opt:
+            # Set conceptual compression options if it doesn't exist
+            conceptual_compression_opt = {"number": 8, "size": 28, "channels": 1, "random": True, "separate": True,
+                                          "z": "mu"}
+
+        # Get conceptual compression options
+        number = conceptual_compression_opt["number"]
+        size = conceptual_compression_opt["size"]
+        channels = conceptual_compression_opt["channels"]
+        random_opt = conceptual_compression_opt["random"]
+        separate = conceptual_compression_opt["separate"]
+        z = conceptual_compression_opt["z"]
+        rows = (1 + self.method.get_num_groups())  # Original and each group
+        columns = number
+        size_with_padding = size + 2
+        height = rows * size_with_padding
+        width = columns * size_with_padding
+
+        # Get the data
+        data = next(iter(test_loader))
+        images, labels = data
+
+        # Start making grid of images
+        if channels == 1:
+            images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
+        else:
+            images = images[:number].reshape(number, channels, size, size)
+
+        # Get the output
+        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+        z_temp = output["mu"] if (z == "mu") else output["z"]
+
+        def get_images_from_order(images, order):
+            images_temp = images.detach().clone()
+            z_decs = []
+            groups = []
+
+            for group in order:
+                # For each group, we need to get z_decs and pass it to the decoder
+                # Start is inclusive, end is not
+                start = group * self.method.get_num_latents_group()
+                end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
+
+                if self.method.get_type() == "Single":
+                    if not len(z_decs):
+                        z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
+                    else:
+                        z_decs[0] = z_decs[0] + self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
+
+                    logits = self.method.z_dec_to_logits(z_decs[0])
+                else:
+                    z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
+                    groups.append(group)
+
+                    logits = self.method.z_decs_to_logits(z_decs, groups)
+
+                # Add to grid of images
+                if channels == 1:
+                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+                else:
+                    logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
+                images_temp = torch.vstack([images_temp, logits_images])
+
+            return images_temp
+
+        def get_separate_images_from_order(images, order):
+            images_temp = images.detach().clone()
+
+            for group in order:
+                # For each group, we need to get z_decs and pass it to the decoder
+                # Start is inclusive, end is not
+                start = group * self.method.get_num_latents_group()
+                end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
+
+                z_dec = self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
+
+                if self.method.get_type() == "Single":
+                    logits = self.method.z_dec_to_logits(z_dec)
+                else:
+                    logits = self.method.z_decs_to_logits([z_dec], [group])
+
+                # Add to grid of images
+                if channels == 1:
+                    logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
+                else:
+                    logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
+                images_temp = torch.vstack([images_temp, logits_images])
+
+            return images_temp
+
+        def images_to_graph(images, order, title, path):
             # Make grid of images
             images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
 
-            plt.title(f"{type(self.method).__name__} {self.experiment} reconstruction")
+            # Create and display the 2D graph
+            plt.title(title)
             plt.xlabel("Label")
-            stop = (number * size_with_padding) - size_with_padding
-            x_ticks = np.linspace(start=0, stop=stop, num=number) + (size_with_padding // 2) + 1
-            y_ticks = np.linspace(start=size_with_padding, stop=0, num=2) + (size_with_padding // 2) + 1
+            x_ticks = np.linspace(start=0, stop=width - size_with_padding, num=number) \
+                      + (size_with_padding // 2) + 1
+            y_ticks = np.linspace(start=height - size_with_padding, stop=0, num=self.method.get_num_groups() + 1) \
+                      + (size_with_padding // 2) + 1
             x_labels = [x.item() for x in labels[:number]]
-            y_labels = ["Rec", "Original"]
+            y_labels = [f"Z{i + 1}" for i in order[::-1]] + ["Original"]
             plt.xticks(ticks=x_ticks, labels=x_labels)
             plt.yticks(ticks=y_ticks, labels=y_labels)
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-            plt.savefig(f"{self.path}/Reconstruction.png", dpi=300)
+            plt.savefig(path, dpi=300)
             plt.show(dpi=300)
 
-        if output_images:
-            if not output_images_opt:
-                # Set output images options if it doesn't exist
-                output_images_opt = { "range": 2.5, "number": 11, "size": 28, "channels": 1 }
+        order = range(self.method.get_num_groups())
+        images_temp = get_images_from_order(images, order)
+        images_to_graph(
+            images_temp,
+            order,
+            f"{type(self.method).__name__} {self.experiment} conceptual compression",
+            f"{self.path}/Conceptual_Compression.png")
 
-            # Get output images options
-            range_opt = output_images_opt["range"]
-            number = output_images_opt["number"]
-            size = output_images_opt["size"]
-            channels = output_images_opt["channels"]
-            total_number = number ** 2
-            size_with_padding = size + 2
-            total_size_with_padding = number * size_with_padding
-
-            # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
-            X = np.linspace(start=-range_opt, stop=range_opt, num=number, dtype=np.single)
-            Y = np.linspace(start=range_opt, stop=-range_opt, num=number, dtype=np.single)
-            Z = torch.tensor([[x, y] for y in Y for x in X])
-
-            # Output images for every pair of latent variables, i.e. (z1, z2), (z3, z4), ...
-            for z_i in np.arange(0, self.method.get_num_latents()-1, 2):
-                Z_input = torch.zeros(total_number, self.method.get_num_latents())
-                Z_input[:, z_i:z_i+2] = Z
-
-                # Get output
-                z_dec, logits = self.method.z_to_logits(Z_input)
-
-                # Make grid of images
-                if channels == 1:
-                    images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, channels, size, size)
-                else:
-                    images = torch.sigmoid(logits).reshape(total_number, channels, size, size)
-                images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
-
-                # Create and display the 2D graph
-                plt.title(f"{type(self.method).__name__} {self.experiment} output images (z{z_i+1} & z{z_i+2})")
-                plt.xlabel(f"z{z_i+1}")
-                plt.ylabel(f"z{z_i+2}")
-                x_ticks = np.linspace(
-                    start=0, stop=total_size_with_padding - size_with_padding, num=number) + (size // 2) + 1
-                y_ticks = np.linspace(
-                    start=total_size_with_padding - size_with_padding, stop=0, num=number) + (size // 2) + 1
-                plt.xticks(ticks=x_ticks, labels=X)
-                plt.yticks(ticks=y_ticks, labels=X)
-                plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(f"{self.path}/Output_Images_z{z_i+1}_z{z_i+2}.png", dpi=300)
-                plt.show(dpi=300)
-
-        # This is only compatible with the Single method
-        if conceptual_compression:
-            if not conceptual_compression_opt:
-                # Set conceptual compression options if it doesn't exist
-                conceptual_compression_opt = { "number": 8, "size": 28, "channels": 1, "random": True, "separate": True, "z": "mu" }
-
-            # Get conceptual compression options
-            number = conceptual_compression_opt["number"]
-            size = conceptual_compression_opt["size"]
-            channels = conceptual_compression_opt["channels"]
-            random_opt = conceptual_compression_opt["random"]
-            separate = conceptual_compression_opt["separate"]
-            z = conceptual_compression_opt["z"]
-            rows = (1 + self.method.get_num_groups()) # Original and each group
-            columns = number
-            size_with_padding = size + 2
-            height = rows * size_with_padding
-            width = columns * size_with_padding
-
-            # Get the data
-            data = next(iter(test_loader))
-            images, labels = data
-
-            # Start making grid of images
-            if channels == 1:
-                images = images[:number].unsqueeze(dim=1).reshape(number, channels, size, size)
-            else:
-                images = images[:number].reshape(number, channels, size, size)
-
-            # Get the output
-            output, loss, log_prob, KLD = self.method.test(i=0, data=data)
-            z_temp = output["mu"] if (z == "mu") else output["z"]
-
-            def get_images_from_order(images, order):
-                images_temp = images.detach().clone()
-                z_decs = []
-                groups = []
-
-                for group in order:
-                    # For each group, we need to get z_decs and pass it to the decoder
-                    # Start is inclusive, end is not
-                    start = group * self.method.get_num_latents_group()
-                    end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
-
-                    if self.method.get_type() == "Single":
-                        if not len(z_decs):
-                            z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
-                        else:
-                            z_decs[0] = z_decs[0] + self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
-
-                        logits = self.method.z_dec_to_logits(z_decs[0])
-                    else:
-                        z_decs.append(self.method.z_to_z_dec(z_temp[:number, start:end], group=group))
-                        groups.append(group)
-
-                        logits = self.method.z_decs_to_logits(z_decs, groups)
-
-                    # Add to grid of images
-                    if channels == 1:
-                        logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
-                    else:
-                        logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
-                    images_temp = torch.vstack([images_temp, logits_images])
-
-                return images_temp
-
-            def get_separate_images_from_order(images, order):
-                images_temp = images.detach().clone()
-
-                for group in order:
-                    # For each group, we need to get z_decs and pass it to the decoder
-                    # Start is inclusive, end is not
-                    start = group * self.method.get_num_latents_group()
-                    end = (group * self.method.get_num_latents_group()) + self.method.get_num_latents_group()
-
-                    z_dec = self.method.z_to_z_dec(z_temp[:number, start:end], group=group)
-
-                    if self.method.get_type() == "Single":
-                        logits = self.method.z_dec_to_logits(z_dec)
-                    else:
-                        logits = self.method.z_decs_to_logits([z_dec], [group])
-
-                    # Add to grid of images
-                    if channels == 1:
-                        logits_images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(number, channels, size, size)
-                    else:
-                        logits_images = torch.sigmoid(logits).reshape(number, channels, size, size)
-                    images_temp = torch.vstack([images_temp, logits_images])
-
-                return images_temp
-
-            def images_to_graph(images, order, title, path):
-                # Make grid of images
-                images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
-
-                # Create and display the 2D graph
-                plt.title(title)
-                plt.xlabel("Label")
-                x_ticks = np.linspace(start=0, stop=width - size_with_padding, num=number) \
-                          + (size_with_padding // 2) + 1
-                y_ticks = np.linspace(start=height - size_with_padding, stop=0, num=self.method.get_num_groups() + 1) \
-                          + (size_with_padding // 2) + 1
-                x_labels = [x.item() for x in labels[:number]]
-                y_labels = [f"Z{i+1}" for i in order[::-1]] + ["Original"]
-                plt.xticks(ticks=x_ticks, labels=x_labels)
-                plt.yticks(ticks=y_ticks, labels=y_labels)
-                plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-                plt.savefig(path, dpi=300)
-                plt.show(dpi=300)
-
-            order = range(self.method.get_num_groups())
+        if random_opt:
+            # Get random order
+            order = [x for x in range(self.method.get_num_groups())]
+            random.shuffle(order)
             images_temp = get_images_from_order(images, order)
             images_to_graph(
                 images_temp,
                 order,
-                f"{type(self.method).__name__} {self.experiment} conceptual compression",
-                f"{self.path}/Conceptual_Compression.png")
+                f"{type(self.method).__name__} {self.experiment} conceptual compression (random order)",
+                f"{self.path}/Conceptual_Compression_Random.png")
 
-            if random_opt:
-                # Get random order
-                order = [x for x in range(self.method.get_num_groups())]
-                random.shuffle(order)
-                images_temp = get_images_from_order(images, order)
-                images_to_graph(
-                    images_temp,
-                    order,
-                    f"{type(self.method).__name__} {self.experiment} conceptual compression (random order)",
-                    f"{self.path}/Conceptual_Compression_Random.png")
-
-            if separate:
-                # Get separate images
-                order = range(self.method.get_num_groups())
-                images_temp = get_separate_images_from_order(images, order)
-                images_to_graph(
-                    images_temp,
-                    order,
-                    f"{type(self.method).__name__} {self.experiment} conceptual compression (separate)",
-                    f"{self.path}/Conceptual_Compression_Separate.png")
+        if separate:
+            # Get separate images
+            order = range(self.method.get_num_groups())
+            images_temp = get_separate_images_from_order(images, order)
+            images_to_graph(
+                images_temp,
+                order,
+                f"{type(self.method).__name__} {self.experiment} conceptual compression (separate)",
+                f"{self.path}/Conceptual_Compression_Separate.png")
 
     def save(self, best, verbose=False):
         path = f"{self.params_path}/Best" if best else f"{self.params_path}/Train"
