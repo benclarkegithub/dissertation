@@ -25,9 +25,9 @@ class Evaluate:
         random.seed(seed)
         np.random.seed(seed)
 
-    def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False):
+    def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False, load_best=False):
         # Try and load the model(s) and training progress
-        self.load(best=False, verbose=True)
+        self.load(best=load_best, verbose=True)
         training_progress = self.load_training()
 
         # Determine the number of models to train
