@@ -1,7 +1,7 @@
 from Datasets import MNIST
 from Evaluate import Evaluate as Eval
 from Methods.Quotient import Quotient
-from Architectures.Basic import Canvas, Encoder, EncoderToLatents, LatentsToDecoder, Decoder
+from Architectures.Basic import Canvas, KL, Encoder, EncoderToLatents, LatentsToDecoder, Decoder
 
 
 SEED = 2030
@@ -14,6 +14,7 @@ mnist = MNIST(
 
 ARCHITECTURE = {
     "Canvas": Canvas,
+    "KL": KL,
     "Encoder": Encoder,
     "EncoderToLatents": EncoderToLatents,
     "LatentsToDecoder": LatentsToDecoder,
@@ -23,16 +24,17 @@ ARCHITECTURE = {
 NUM_LATENTS = 1
 NUM_LATENTS_GROUP = 1
 LEARNING_RATE = 1e-4
+CLIP = 1e6
 
 method = Quotient(
     architecture=ARCHITECTURE,
     num_latents=NUM_LATENTS,
     num_latents_group=NUM_LATENTS_GROUP,
-    learning_rate=LEARNING_RATE,
     encoder_to_latents=False,
     resample=True,
-    learnable_KL=False,
-    clip=100)
+    learnable_KL=True,
+    learning_rate=LEARNING_RATE,
+    clip=CLIP)
 
 MAX_EPOCHS = 50
 MAX_NO_IMPROVEMENT = 10
