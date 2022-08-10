@@ -4,8 +4,8 @@ from Methods.RNN import RNN
 from Architectures.Basic import Canvas, Encoder, EncoderEncoderToEncoder, EncoderToLatents, EncoderLatentsToLatents, \
     LatentsToLatents, LatentsToDecoder, Decoder
 
-# 2040 didn't work (exploding gradients epoch 10+)
-SEED = 2041
+
+SEED = 2040
 BATCH_SIZE = 128
 TRAIN_SET_SIZE = 47500
 VAL_SET_SIZE = 2500
@@ -32,6 +32,7 @@ OUT_CHANNELS = 16
 LOG_PROB_FN = "N"
 STD = 0.05
 HIDDEN_SIZE = 256
+CLIP = 1e7
 
 method = RNN(
     architecture=ARCHITECTURE,
@@ -48,7 +49,8 @@ method = RNN(
     out_channels=OUT_CHANNELS,
     log_prob_fn=LOG_PROB_FN,
     std=STD,
-    hidden_size=HIDDEN_SIZE)
+    hidden_size=HIDDEN_SIZE,
+    clip=CLIP)
 
 MAX_EPOCHS = 10
 MAX_NO_IMPROVEMENT = 10
