@@ -10,11 +10,18 @@ import torchvision
 from Utils import make_dir
 
 class Evaluate:
-    def __init__(self, method, experiment, *, log=True, seed=None):
+    def __init__(self, method, experiment, *, trial=None, log=True, seed=None):
         self.method = method
         self.experiment = experiment
-        self.path = experiment
+        self.path = experiment + ("" if trial is None else f"/{trial}")
         self.params_path = self.path + "/" + "Parameters"
+
+        # Make directories
+        make_dir(self.experiment)
+        if trial is not None:
+            make_dir(self.path)
+        make_dir(self.params_path)
+
         self.log = log
         if seed is not None:
             self.seed_everything(seed)
@@ -521,9 +528,7 @@ class Evaluate:
         path = f"{self.params_path}/Best" if best else f"{self.params_path}/Train"
         if verbose:
             print(f"Saving model... {path}")
-        # Create the directory if it doesn't exist
-        make_dir(self.path)
-        make_dir(self.params_path)
+
         # Save
         self.method.save(path)
 
@@ -552,9 +557,6 @@ class Evaluate:
                       epoch_time,
                       *,
                       grad):
-        # Get the directory name and if it doesn't exist create it
-        make_dir(self.path)
-
         training_progress = {
             "avg_train_loss": avg_train_loss,
             "avg_train_log_prob": avg_train_log_prob,
@@ -654,9 +656,6 @@ class Evaluate:
         print(message)
 
         if self.log:
-            # Get the directory name and if it doesn't exist create it
-            make_dir(self.path)
-
             # Check to see if the log file exists
             if exists(f"{self.path}/Training.log"):
                 with open(f"{self.path}/Training.log", "a") as file:
