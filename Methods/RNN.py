@@ -3,6 +3,7 @@ import torch.optim as optim
 from torchinfo import summary
 
 from Method import Method
+from Architectures.RNN import RNN as RNN2
 
 
 """
@@ -46,22 +47,26 @@ class RNN(Method):
                  backprop,
                  resample,
                  *,
+                 type="Multiple",
                  learning_rate=1e-3,
                  size=28,
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
                  std=0.05,
-                 hidden_size=None):
-        super().__init__(num_latents=num_latents, type="Multiple")
+                 hidden_size=None,
+                 clip=None):
+        super().__init__(num_latents=num_latents, type=type)
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
+        self.type = type
         self.size = size
         self.channels = channels
         self.log_prob_fn = log_prob_fn
         self.std = std
         self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
+        self.clip = clip
         # Options
         self.reconstruction = reconstruction
         self.encoders = encoders
@@ -72,36 +77,31 @@ class RNN(Method):
 
         # Canvas
         self.canvas = architecture["Canvas"](size, channels).to(self.device)
-        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder
         self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels).to(self.device)
-        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder 2
+        self.encoder_2 = None
         if self.encoders:
             self.encoder_2 = architecture["Encoder"](size, channels, self.hidden_size, out_channels).to(self.device)
-            self.optimiser_encoder_2 = optim.Adam(self.encoder_2.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder Encoder to Encoder
+        self.enc_enc_to_enc = None
         if self.reconstruction and (self.to_latents == "Encoder"):
             self.enc_enc_to_enc = architecture["EncoderEncoderToEncoder"](self.hidden_size).to(self.device)
-            self.optimiser_enc_enc_to_enc = optim.Adam(
-                self.enc_enc_to_enc.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Encoder to Latents
+        self.enc_to_lat = None
+        self.enc_to_lats = None
+        self.enc_lats_to_lats = None
         if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
             if not self.encoder_to_latents:
                 self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
-                self.optimiser_enc_to_lat = optim.Adam(
-                    self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
             else:
                 self.enc_to_lats = [
                     architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
                     for _ in range(self.num_groups)]
-                self.optimiser_enc_to_lats = [
-                    optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                    for x in self.enc_to_lats]
 
         # Encoder Latents to Latents
         elif self.to_latents == "EncoderLatents":
@@ -110,60 +110,46 @@ class RNN(Method):
             self.enc_lats_to_lats = [
                 architecture["EncoderLatentsToLatents"](hidden_size_temp, group, num_latents_group).to(self.device)
                 for group in range(self.num_groups)]
-            self.optimiser_enc_lats_to_lats = [
-                optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-                for x in self.enc_lats_to_lats]
 
         # Latents to Latents
+        self.lats_to_lats = None
         if self.to_latents == "Latents":
             self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group).to(self.device)
-            self.optimiser_lats_to_lats = optim.Adam(
-                self.lats_to_lats.parameters(), lr=learning_rate, weight_decay=1e-5)
 
         # Latents to Decoder
         self.lats_to_dec = [
             architecture["LatentsToDecoder"](self.hidden_size, num_latents_group).to(self.device)
             for _ in range(self.num_groups)]
-        self.optimiser_lats_to_dec = [
-            optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5)
-            for x in self.lats_to_dec]
 
         # Decoder
         self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels).to(self.device)
-        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
+
+        # Model
+        self.model = RNN2(
+            self.canvas,
+            self.encoder,
+            self.lats_to_dec,
+            self.decoder,
+            encoder_2=self.encoder_2,
+            enc_enc_to_enc=self.enc_enc_to_enc,
+            enc_to_lat=self.enc_to_lat,
+            enc_to_lats=self.enc_to_lats,
+            enc_lats_to_lats=self.enc_lats_to_lats,
+            lats_to_lats=self.lats_to_lats)
+        self.optimiser_model = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
     def train(self, i, data, *, get_grad=False, model=None):
         losses = []
         log_probs = []
         KLDs = []
         grads = []
-        grads_2 = []
 
         # Get the input images
         images, _ = data
         images = images.to(self.device)
 
         # Zero the parameter's gradients
-        self.optimiser_canvas.zero_grad()
-        self.optimiser_encoder.zero_grad()
-        if self.encoders:
-            self.optimiser_encoder_2.zero_grad()
-        if self.reconstruction and (self.to_latents == "Encoder"):
-            self.optimiser_enc_enc_to_enc.zero_grad()
-        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-            if not self.encoder_to_latents:
-                self.optimiser_enc_to_lat.zero_grad()
-            else:
-                for x in self.optimiser_enc_to_lats:
-                    x.zero_grad()
-        elif self.to_latents == "EncoderLatents":
-            for x in self.optimiser_enc_lats_to_lats:
-                x.zero_grad()
-        if self.to_latents == "Latents":
-            self.optimiser_lats_to_lats.zero_grad()
-        for x in self.optimiser_lats_to_dec:
-            x.zero_grad()
-        self.optimiser_decoder.zero_grad()
+        self.optimiser_model.zero_grad()
 
         # Forward
         # Get encoder output of images
@@ -198,6 +184,9 @@ class RNN(Method):
         logvar = None
         # Used when resample is False
         zs = None
+
+        if self.type == "Single":
+            model = self.num_groups - 1
 
         for group in range(model + 1):
             mu_2, logvar_2 = None, None
@@ -299,64 +288,46 @@ class RNN(Method):
             log_probs.append(log_prob.detach())
             KLDs.append(KLD.detach())
 
-            # Get the gradients
-            # Not 100% correct when encoder_to_latents is False
-            if get_grad:
-                grad = []
-                grad_2 = []
+        # Clip the gradients
+        if self.clip is not None:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
 
-                components = [self.encoder, self.decoder] + ([self.encoder_2] if self.encoders else [])
-                for x in components:
-                    for name, param in x.named_parameters():
-                        grad.append(param.grad.abs().flatten())
+        # Get the gradients
+        if get_grad:
+            grad_temp = []
 
-                components_2 = []
-                if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-                    if not self.encoder_to_latents:
-                        components_2 += components_2 + [self.enc_to_lat]
-                    else:
-                        components_2 += components_2 + [self.enc_to_lats[group]]
-                elif self.to_latents == "EncoderLatents":
-                    components_2 += [self.enc_lats_to_lats[group]]
+            # Components that are the same for each group
+            components = [self.canvas, self.encoder, self.decoder]
+            components += self.lats_to_dec
+            components += [self.encoder_2] if self.encoder_2 is not None else []
+            components += [self.enc_enc_to_enc] if self.enc_enc_to_enc is not None else []
+            components += [self.enc_to_lat] if self.enc_to_lat is not None else []
+            components += [self.lats_to_lats] if self.lats_to_lats is not None else []
+            # Components that are the unique for each group
+            components += [
+                self.enc_to_lats[j] for j in range(self.num_groups)] if self.enc_to_lats is not None else []
+            components += [
+                self.enc_lats_to_lats[j] for j in range(self.num_groups)] if self.enc_lats_to_lats is not None else []
 
-                for x in components_2:
-                    for name, param in x.named_parameters():
-                        grad_2.append(param.grad.abs().flatten())
+            for x in components:
+                for name, param in x.named_parameters():
+                    if param.grad is not None:
+                        grad_temp.append(param.grad.flatten())
 
-                grads.append(torch.concat(grad).mean().item())
-                grads_2.append(torch.concat(grad_2).mean().item())
+            grads.append(torch.linalg.norm(torch.cat(grad_temp)))
 
         # Step
-        self.optimiser_canvas.step()
-        self.optimiser_encoder.step()
-        if self.encoders:
-            self.optimiser_encoder_2.step()
-        if self.reconstruction and (self.to_latents == "Encoder"):
-            self.optimiser_enc_enc_to_enc.step()
-        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-            if not self.encoder_to_latents:
-                self.optimiser_enc_to_lat.step()
-            else:
-                for x in self.optimiser_enc_to_lats:
-                    x.step()
-        elif self.to_latents == "EncoderLatents":
-            for x in self.optimiser_enc_lats_to_lats:
-                x.step()
-        if self.to_latents == "Latents":
-            self.optimiser_lats_to_lats.step()
-        for x in self.optimiser_lats_to_dec:
-            x.step()
-        self.optimiser_decoder.step()
+        self.optimiser_model.step()
 
-        # Fix KLDs and gradients
+        # Fix KLDs
         KLDs_temp = KLDs.copy()
         KLDs_temp.insert(0, 0)
-        KLDs = [KLDs[i] - KLDs_temp[i] for i in range(len(KLDs))]
-        grads_temp = grads.copy()
-        grads_temp.insert(0, 0)
-        grads = [grads[i] - grads_temp[i] + grads_2[i] for i in range(len(grads))]
+        KLDs = [KLDs[j] - KLDs_temp[j] for j in range(len(KLDs))]
 
-        return [losses[-1]], [log_probs[-1]], [KLDs[-1]], [grads[-1]]
+        if self.type == "Single":
+            return losses, log_probs, KLDs, grads
+        else:
+            return [losses[-1]], [log_probs[-1]], [KLDs[-1]], grads
 
     @torch.no_grad()
     def test(self, i, data, *, model=None):
@@ -400,6 +371,7 @@ class RNN(Method):
         zs = None
 
         model_temp = model if model is not None else (self.num_groups - 1)
+
         for group in range(model_temp + 1):
             mu_2, logvar_2 = None, None
             start = group * self.num_latents_group
@@ -546,37 +518,7 @@ class RNN(Method):
         self.decoder.load_state_dict(torch.load(f"{path}_dec.pth"))
 
     def summary(self):
-        summaries = []
-        summaries.append("Encoder")
-        summaries.append(str(summary(self.encoder)))
-        if self.encoders:
-            summaries.append("Encoder 2")
-            summaries.append(str(summary(self.encoder_2)))
-        if self.reconstruction and (self.to_latents == "Encoder"):
-            summaries.append("Encoder Encoder to Encoder")
-            summaries.append(str(summary(self.enc_enc_to_enc)))
-        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-            if not self.encoder_to_latents:
-                summaries.append(f"Encoder to Latent")
-                summaries.append(str(summary(self.enc_to_lat)))
-            else:
-                for i, x in enumerate(self.enc_to_lats):
-                    summaries.append(f"Encoder to Latents {i}")
-                    summaries.append(str(summary(x)))
-        elif self.to_latents == "EncoderLatents":
-            for i, x in enumerate(self.enc_lats_to_lats):
-                summaries.append(f"Encoder Latents to Latents {i}")
-                summaries.append(str(summary(x)))
-        if self.to_latents == "Latents":
-            summaries.append("Latents to Latents")
-            summaries.append(str(summary(self.lats_to_lats)))
-        for i, x in enumerate(self.lats_to_dec):
-            summaries.append(f"Latents to Decoder {i}")
-            summaries.append(str(summary(x)))
-        summaries.append("Decoder")
-        summaries.append(str(summary(self.decoder)))
-
-        return summaries
+        return str(summary(self.model, verbose=False))
 
     @torch.no_grad()
     def x_to_mu_logvar(self, x):

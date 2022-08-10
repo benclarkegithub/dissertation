@@ -4,6 +4,7 @@ from torch.distributions import Normal
 from torchinfo import summary
 
 from Method import Method
+from Architectures.Quotient import Quotient as Quotient2
 
 
 """
@@ -31,7 +32,7 @@ class Quotient(Method):
                  resample,
                  learnable_KL,
                  *,
-                 learning_rate=1e-3,
+                 learning_rate=1e-4,
                  size=28,
                  channels=1,
                  out_channels=None,
@@ -55,9 +56,12 @@ class Quotient(Method):
         self.learnable_KL = learnable_KL
 
         self.canvas = architecture["Canvas"](size, channels)
+        self.KL = None
         if self.learnable_KL:
             self.KL = architecture["KL"]()
         self.encoder = architecture["Encoder"](size, channels, self.hidden_size, out_channels)
+        self.enc_to_lat = None
+        self.enc_to_lats = None
         if not self.encoder_to_latents:
             self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group)
         else:
@@ -67,42 +71,27 @@ class Quotient(Method):
             architecture["LatentsToDecoder"](self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
         self.decoder = architecture["Decoder"](self.hidden_size, size, channels, out_channels)
 
-        self.optimiser_canvas = optim.Adam(self.canvas.parameters(), lr=learning_rate, weight_decay=1e-5)
-        if self.learnable_KL:
-            self.optimiser_KL = optim.Adam(self.KL.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.optimiser_encoder = optim.Adam(self.encoder.parameters(), lr=learning_rate, weight_decay=1e-5)
-        if not self.encoder_to_latents:
-            self.optimiser_enc_to_lat = optim.Adam(self.enc_to_lat.parameters(), lr=learning_rate, weight_decay=1e-5)
-        else:
-            self.optimiser_enc_to_lats = [
-                optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5) for x in self.enc_to_lats]
-        self.optimiser_lats_to_dec = [
-            optim.Adam(x.parameters(), lr=learning_rate, weight_decay=1e-5) for x in self.lats_to_dec]
-        self.optimiser_decoder = optim.Adam(self.decoder.parameters(), lr=learning_rate, weight_decay=1e-5)
+        self.model = Quotient2(
+            self.canvas,
+            self.encoder,
+            self.lats_to_dec,
+            self.decoder,
+            KL=self.KL,
+            enc_to_lat=self.enc_to_lat,
+            enc_to_lats=self.enc_to_lats)
+        self.optimiser_model = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
-    def train(self, i, data, *, get_grad=False):
+    def train(self, i, data, *, get_grad=True):
         losses = []
         log_probs = []
         KLDs = []
         grads = []
-        grads_2 = []
 
         # Get the input images
         images, _ = data
 
         # Zero the parameter's gradients
-        self.optimiser_canvas.zero_grad()
-        if self.learnable_KL:
-            self.optimiser_KL.zero_grad()
-        self.optimiser_encoder.zero_grad()
-        if not self.encoder_to_latents:
-            self.optimiser_enc_to_lat.zero_grad()
-        else:
-            for x in self.optimiser_enc_to_lats:
-                x.zero_grad()
-        for x in self.optimiser_lats_to_dec:
-            x.zero_grad()
-        self.optimiser_decoder.zero_grad()
+        self.model.zero_grad()
 
         # Forward
         # Get encoder output of images
@@ -195,62 +184,37 @@ class Quotient(Method):
             log_probs.append(log_prob.detach())
             KLDs.append(KLD.detach())
 
-            # Get the gradients
-            # Not 100% correct when encoder_to_latents == False
-            if get_grad:
-                grad = []
-                grad_2 = []
-
-                for x in [self.encoder, self.decoder]:
-                    for name, param in x.named_parameters():
-                        grad.append(param.grad.abs().flatten())
-
-                enc_to_lat = None
-                if not self.encoder_to_latents:
-                    enc_to_lat = self.enc_to_lat
-                else:
-                    enc_to_lat = self.enc_to_lats[group]
-
-                for x in [enc_to_lat, self.lats_to_dec[group]]:
-                    for name, param in x.named_parameters():
-                        grad_2.append(param.grad.abs().flatten())
-
-                grads.append(torch.concat(grad).mean().item())
-                grads_2.append(torch.concat(grad_2).mean().item())
-
         # Clip the gradients
         if self.clip is not None:
-            torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), self.clip)
-            if not self.encoder_to_latents:
-                torch.nn.utils.clip_grad_norm_(self.enc_to_lat.parameters(), self.clip)
-            else:
-                for x in self.enc_to_lats:
-                    torch.nn.utils.clip_grad_norm_(x.parameters(), self.clip)
-            for x in self.lats_to_dec:
-                torch.nn.utils.clip_grad_norm_(x.parameters(), self.clip)
-            torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), self.clip)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+
+        # Get the gradients
+        if get_grad:
+            grad_temp = []
+
+            # Components that are the same for each group
+            components = [self.canvas, self.encoder, self.decoder]
+            components += self.lats_to_dec
+            components += [self.KL] if self.KL is not None else []
+            components += [self.enc_to_lat] if self.enc_to_lat is not None else []
+            # Components that are the unique for each group
+            components += [
+                self.enc_to_lats[j] for j in range(self.num_groups)] if self.enc_to_lats is not None else []
+
+            for x in components:
+                for name, param in x.named_parameters():
+                    if param.grad is not None:
+                        grad_temp.append(param.grad.flatten())
+
+            grads.append(torch.linalg.norm(torch.cat(grad_temp)))
 
         # Step
-        self.optimiser_canvas.step()
-        if self.learnable_KL:
-            self.optimiser_KL.step()
-        self.optimiser_encoder.step()
-        if not self.encoder_to_latents:
-            self.optimiser_enc_to_lat.step()
-        else:
-            for x in self.optimiser_enc_to_lats:
-                x.step()
-        for x in self.optimiser_lats_to_dec:
-            x.step()
-        self.optimiser_decoder.step()
+        self.optimiser_model.step()
 
-        # Fix KLDs and gradients
+        # Fix KLDs
         KLDs_temp = KLDs.copy()
         KLDs_temp.insert(0, 0)
         KLDs = [KLDs[i] - KLDs_temp[i] for i in range(len(KLDs))]
-        grads_temp = grads.copy()
-        grads_temp.insert(0, 0)
-        grads = [grads[i] - grads_temp[i] + grads_2[i] for i in range(len(grads))]
 
         return losses, log_probs, KLDs, grads
 
@@ -285,6 +249,8 @@ class Quotient(Method):
         z_dec = None
         # Used for "NoResample" and "Both" variants
         zs = None
+        log_q = None
+        log_p = None
         log_qs = None
         log_ps = None
 
@@ -385,23 +351,7 @@ class Quotient(Method):
         self.decoder.load_state_dict(torch.load(f"{path}_dec.pth"))
 
     def summary(self):
-        summaries = []
-        summaries.append("Encoder")
-        summaries.append(str(summary(self.encoder)))
-        if not self.encoder_to_latents:
-            summaries.append(f"Encoder to Latent")
-            summaries.append(str(summary(self.enc_to_lat)))
-        else:
-            for i, x in enumerate(self.enc_to_lats):
-                summaries.append(f"Encoder to Latents {i}")
-                summaries.append(str(summary(x)))
-        for i, x in enumerate(self.lats_to_dec):
-            summaries.append(f"Latents to Decoder {i}")
-            summaries.append(str(summary(x)))
-        summaries.append("Decoder")
-        summaries.append(str(summary(self.decoder)))
-
-        return summaries
+        return str(summary(self.model, verbose=False))
 
     @torch.no_grad()
     def x_to_mu_logvar(self, x):

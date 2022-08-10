@@ -125,6 +125,33 @@ class LatentsToLatents(nn.Module):
         return mu, logvar
 
 
+class LatentsToLatentsComplicated(nn.Module):
+    def __init__(self, num_latents_group):
+        super().__init__()
+
+        hidden_size = 100
+
+        # Fully-connected layers
+        self.fc1 = nn.Linear(num_latents_group * 4, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, hidden_size)
+        self.fc_mean = nn.Linear(hidden_size, num_latents_group)
+        self.fc_logvar = nn.Linear(hidden_size, num_latents_group)
+
+    def forward(self, mu_1, logvar_1, mu_2, logvar_2):
+        # num_latents_group * 4 -> hidden_size
+        x = F.leaky_relu(self.fc1(torch.cat([mu_1, logvar_1, mu_2, logvar_2], dim=1)))
+        # hidden_size -> hidden_size
+        x = F.leaky_relu(self.fc2(x))
+        # hidden_size -> hidden_size
+        x = F.leaky_relu(self.fc3(x))
+        # hidden_size -> num_latents_group
+        mu = self.fc_mean(x)
+        logvar = self.fc_logvar(x)
+
+        return mu, logvar
+
+
 class LatentsToDecoder(nn.Module):
     def __init__(self, hidden_size, num_latents_group):
         super().__init__()
