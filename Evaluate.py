@@ -9,6 +9,7 @@ import torchvision
 
 from Utils import make_dir
 
+
 class Evaluate:
     def __init__(self, method, experiment, *, trial=None, log=True, seed=None):
         self.method = method
@@ -25,6 +26,10 @@ class Evaluate:
         self.log = log
         if seed is not None:
             self.seed_everything(seed)
+
+        # To get reconstruction error (/dim) and ELBO (bits/dim)
+        self.denominator = (self.method.get_size() ** 2) * self.method.get_channels()
+        self.denominator_bits = self.denominator * torch.log(torch.tensor(2))
 
     def seed_everything(self, seed):
         # https://pytorch.org/docs/stable/notes/randomness.html
@@ -178,8 +183,9 @@ class Evaluate:
             avg_val_log_prob=avg_val_log_prob
         )
 
-        # Plot training/validation ELBO and KL divergence
+        # Plot training/validation ELBO, reconstruction error, and KL divergence
         self.plot_training_ELBO(avg_train_loss=avg_train_loss, avg_val_loss=avg_val_loss)
+        self.plot_training_reconstruction(avg_train_log_prob=avg_train_log_prob, avg_val_log_prob=avg_val_log_prob)
         self.plot_training_KLD(avg_train_KLD=avg_train_KLD, avg_val_KLD=avg_val_KLD)
         if get_grad:
             self.plot_grad(grad=grad)
@@ -607,10 +613,10 @@ class Evaluate:
                   avg_val_KLDs,
                   grad):
         message = f"[Epoch {epoch:3} ({epoch_time:.2f}s)]\t" \
-                  f"ELBO: {', '.join([f'{-x:.3f}' for x in avg_train_losses])}" \
-                  f" ({', '.join([f'{-x:.3f}' for x in avg_val_losses])})\t" \
-                  f"Log prob: {', '.join([f'{x:.3f}' for x in avg_train_log_probs])}" \
-                  f" ({', '.join([f'{x:.3f}' for x in avg_val_log_probs])})\t" \
+                  f"ELBO (bits/dim): {', '.join([f'{-x / self.denominator_bits:.3f}' for x in avg_train_losses])}" \
+                  f" ({', '.join([f'{-x / self.denominator_bits:.3f}' for x in avg_val_losses])})\t" \
+                  f"Reconstruction error (/dim): {', '.join([f'{x / self.denominator:.3f}' for x in avg_train_log_probs])}" \
+                  f" ({', '.join([f'{x / self.denominator:.3f}' for x in avg_val_log_probs])})\t" \
                   f"KLD: {', '.join([f'{x:.3f}' for x in avg_train_KLDs])}" \
                   f" ({', '.join([f'{x:.3f}' for x in avg_val_KLDs])})"
 
@@ -638,15 +644,15 @@ class Evaluate:
         avg_train_log_prob = np.stack(avg_train_log_prob[-1])
         avg_val_log_prob = np.stack(avg_val_log_prob[-1])
 
-        best_train_ELBO = -avg_train_loss[:, -1].min()
-        best_val_ELBO = -avg_val_loss[:, -1].min()
-        best_train_log_prob = avg_train_log_prob[:, -1].max()
-        best_val_log_prob = avg_val_log_prob[:, -1].max()
+        best_train_ELBO = -avg_train_loss[:, -1].min() / self.denominator_bits
+        best_val_ELBO = -avg_val_loss[:, -1].min() / self.denominator_bits
+        best_train_log_prob = avg_train_log_prob[:, -1].max() / self.denominator
+        best_val_log_prob = avg_val_log_prob[:, -1].max() / self.denominator
 
         message = f"Best epoch(s): {best_avg_val_epoch}\t"\
                   f"Training time(s): {', '.join([f'{x:.2f}s' for x in epoch_time_per_model])} ({epoch_time_total:.2f}s)\t" \
-                  f"Best ELBO: {best_train_ELBO:.3f} ({best_val_ELBO:.3f})\t" \
-                  f"Best log prob: {best_train_log_prob:.3f} ({best_val_log_prob:.3f})"
+                  f"Best ELBO (bits/dim): {best_train_ELBO:.3f} ({best_val_ELBO:.3f})\t" \
+                  f"Best reconstruction error (/dim): {best_train_log_prob:.3f} ({best_val_log_prob:.3f})"
 
         # Log message
         self.write_log(message)
@@ -664,41 +670,66 @@ class Evaluate:
                 with open(f"{self.path}/Training.log", "w") as file:
                     file.write(f"{message}\n")
 
-    def plot_training_ELBO(self, avg_train_loss, avg_val_loss, *, avg_train_log_prob=None, avg_val_log_prob=None):
+    def plot_training_ELBO(self, avg_train_loss, avg_val_loss):
         avg_train_loss = [np.stack(x) for x in avg_train_loss]
         avg_val_loss = [np.stack(x) for x in avg_val_loss]
-        if avg_train_log_prob is not None:
-            avg_train_log_prob = [np.stack(x) for x in avg_train_log_prob]
-        if avg_val_log_prob is not None:
-            avg_val_log_prob = [np.stack(x) for x in avg_val_log_prob]
 
         models = len(avg_train_loss)
+
         for model in range(models):
             epochs, train_groups = avg_train_loss[model].shape
-            X = np.arange(1, epochs+1)
+            X = np.arange(1, epochs + 1)
 
             for g_i in range(train_groups):
-                train_loss_label = f"Train ELBO (Z<={g_i+1})"
-                train_log_prob_label = f"Train log-likelihood (Z<={g_i+1})"
-                if models > 1:
-                    train_loss_label = f"Train ELBO (Model {model+1}) (Z<={g_i+1})"
-                    train_log_prob_label = f"Train log-likelihood (Model {model+1}) (Z<={g_i+1})"
+                if models == 1:
+                    train_loss_label = f"Train (Z<={g_i + 1})"
+                else:
+                    if train_groups == 1:
+                        train_loss_label = f"Train (Z<={model + 1})"
+                    else:
+                        train_loss_label = f"Train (Model {model + 1}) (Z<={g_i + 1})"
 
-                plt.plot(X, -avg_train_loss[model][:, g_i], label=train_loss_label)
-                if avg_train_log_prob:
-                    plt.plot(X, avg_train_log_prob[model][:, g_i], label=train_log_prob_label)
+                plt.plot(X, -avg_train_loss[model][:, g_i] / self.denominator_bits, label=train_loss_label)
 
-            val_loss_label = "Val. ELBO" if models == 1 else f"Val. ELBO (Model {model+1})"
-            plt.plot(X, -avg_val_loss[model][:, 0], label=val_loss_label)
-            if avg_val_log_prob:
-                val_log_prob_label = "Val. log-likelihood" if models == 1 else f"Val. log-likelihood (Model {model+1})"
-                plt.plot(X, avg_val_log_prob[model][:, 0], label=val_log_prob_label)
+            val_loss_label = "Validation" if models == 1 else f"Validation (Model {model + 1})"
+            plt.plot(X, -avg_val_loss[model][:, 0] / self.denominator_bits, label=val_loss_label)
 
-        plt.title(f"{type(self.method).__name__} {self.experiment} avg. training/validation ELBO")
+        plt.title(f"{type(self.method).__name__} {self.experiment} average ELBO")
         plt.xlabel("Epoch")
-        plt.ylabel("Avg. ELBO")
+        plt.ylabel("Avg. ELBO (bits/dim)")
         plt.legend()
         plt.savefig(f"{self.path}/ELBO.png", dpi=300)
+        plt.show(dpi=300)
+
+    def plot_training_reconstruction(self, avg_train_log_prob, avg_val_log_prob):
+        avg_train_log_prob = [np.stack(x) for x in avg_train_log_prob]
+        avg_val_log_prob = [np.stack(x) for x in avg_val_log_prob]
+
+        models = len(avg_train_log_prob)
+
+        for model in range(models):
+            epochs, train_groups = avg_train_log_prob[model].shape
+            X = np.arange(1, epochs + 1)
+
+            for g_i in range(train_groups):
+                if models == 1:
+                    train_log_prob_label = f"Train (Z<={g_i + 1})"
+                else:
+                    if train_groups == 1:
+                        train_log_prob_label = f"Train (Z<={model + 1})"
+                    else:
+                        train_log_prob_label = f"Train (Model {model + 1}) (Z<={g_i + 1})"
+
+                plt.plot(X, avg_train_log_prob[model][:, g_i] / self.denominator, label=train_log_prob_label)
+
+            val_log_prob_label = "Validation" if models == 1 else f"Validation (Model {model + 1})"
+            plt.plot(X, avg_val_log_prob[model][:, 0] / self.denominator, label=val_log_prob_label)
+
+        plt.title(f"{type(self.method).__name__} {self.experiment} average reconstruction error")
+        plt.xlabel("Epoch")
+        plt.ylabel("Avg. reconstruction error (/dim)")
+        plt.legend()
+        plt.savefig(f"{self.path}/Reconstruction_Error.png", dpi=300)
         plt.show(dpi=300)
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
@@ -706,15 +737,16 @@ class Evaluate:
         avg_train_KLD = [np.stack(x) for x in avg_train_KLD]
 
         models = len(avg_train_KLD)
+
         for model in range(models):
             epochs, train_groups = avg_train_KLD[model].shape
-            X = np.arange(1, epochs+1)
+            X = np.arange(1, epochs + 1)
 
             for g_i in range(train_groups):
-                train_KLD_label = f"Z{g_i+1}" if models == 1 else f"Model {model+1} Z{g_i+1}"
+                train_KLD_label = f"Z{g_i + 1}" if models == 1 else f"Model {model + 1} Z{g_i + 1}"
                 plt.plot(X, avg_train_KLD[model][:, g_i], label=train_KLD_label)
 
-        plt.title(f"{type(self.method).__name__} {self.experiment} avg. training KL divergence")
+        plt.title(f"{type(self.method).__name__} {self.experiment} average training KL divergence")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
         plt.legend()
@@ -725,11 +757,12 @@ class Evaluate:
         avg_val_KLD = [np.stack(x) for x in avg_val_KLD]
 
         models = len(avg_val_KLD)
+
         for model in range(models):
             epochs, train_groups = avg_val_KLD[model].shape
             X = np.arange(1, epochs + 1)
 
-            val_KLD_label = "Validation" if models == 1 else f"Model {model+1}"
+            val_KLD_label = "Validation" if models == 1 else f"Model {model + 1}"
             plt.plot(X, avg_val_KLD[model][:, 0], label=val_KLD_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. validation KL divergence")
@@ -743,15 +776,16 @@ class Evaluate:
         grad = [np.stack(x) for x in grad]
 
         models = len(grad)
+
         for model in range(models):
             epochs, train_groups = grad[model].shape
-            X = np.arange(1, epochs+1)
+            X = np.arange(1, epochs + 1)
 
             for g_i in range(train_groups):
-                grad_label = f"Z{g_i+1}" if models == 1 else f"Model {model+1} Z{g_i+1}"
+                grad_label = f"Z{g_i + 1}" if models == 1 else f"Model {model + 1} Z{g_i + 1}"
                 plt.plot(X, grad[model][:, g_i], label=grad_label)
 
-        plt.title(f"{type(self.method).__name__} {self.experiment} avg. gradient norm")
+        plt.title(f"{type(self.method).__name__} {self.experiment} average gradient norm")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. gradient norm")
         plt.legend()

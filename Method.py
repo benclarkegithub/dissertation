@@ -115,7 +115,9 @@ class Method(ABC):
         else: # KLD_fn == "Custom"
             KLD = self.KLD_Custom_fn(log_p, log_q)
 
-        return (log_prob - (beta * KLD)).mean(), log_prob.mean(), KLD.mean()
+        reconstruction_error = ((x - torch.sigmoid(logits)) ** 2).sum(dim=-1)
+
+        return (log_prob - (beta * KLD)).mean(), reconstruction_error.mean(), KLD.mean()
 
     def CB_log_prob_fn(self, logits, x):
         # The continuous Bernoulli: fixing a pervasive error in variational autoencoders, Loaiza-Ganem G and Cunningham
