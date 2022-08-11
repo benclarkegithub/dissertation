@@ -2,13 +2,29 @@ from abc import ABC, abstractmethod
 import torch
 
 class Method(ABC):
-    def __init__(self, num_latents, type):
+    def __init__(self,
+                 num_latents,
+                 type,
+                 learning_rate=1e-3,
+                 size=28,
+                 channels=1,
+                 out_channels=None,
+                 log_prob_fn="CB",
+                 std=0.05,
+                 hidden_size=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.num_latents = num_latents
         self.num_latents_group = 1
         self.num_groups = num_latents // self.num_latents_group
         self.type = type
+        self.learning_rate = learning_rate
+        self.size = size
+        self.channels = channels
+        self.out_channels = out_channels
+        self.log_prob_fn = log_prob_fn
+        self.std = std
+        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
     @abstractmethod
     def train(self, i, data, *, get_grad=False):
@@ -63,6 +79,27 @@ class Method(ABC):
 
     def get_type(self):
         return self.type
+
+    def get_learning_rate(self):
+        return self.learning_rate
+
+    def get_size(self):
+        return self.size
+
+    def get_channels(self):
+        return self.channels
+
+    def get_out_channels(self):
+        return self.out_channels
+
+    def get_log_prob_fn(self):
+        return self.log_prob_fn
+
+    def get_std(self):
+        return self.std
+
+    def get_hidden_size(self):
+        return self.hidden_size
 
     def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05):
         if log_prob_fn == "CB":

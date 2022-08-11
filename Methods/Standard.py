@@ -17,22 +17,25 @@ class Standard(Method):
                  log_prob_fn="CB",
                  std=0.05,
                  hidden_size=None):
-        super().__init__(num_latents=num_latents, type="Single")
-
-        self.size = size
-        self.channels = channels
-        self.log_prob_fn = log_prob_fn
-        self.std = std
-        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
-
-        self.VAE = VAE(
-            num_latents,
-            self.num_latents_group,
+        super().__init__(
+            num_latents=num_latents,
+            type="Single",
+            learning_rate=learning_rate,
             size=size,
             channels=channels,
             out_channels=out_channels,
+            log_prob_fn=log_prob_fn,
+            std=std,
+            hidden_size=hidden_size)
+
+        self.VAE = VAE(
+            self.num_latents,
+            self.num_latents_group,
+            size=self.size,
+            channels=self.channels,
+            out_channels=self.out_channels,
             hidden_size=self.hidden_size)
-        self.optimiser = optim.Adam(self.VAE.parameters(), lr=learning_rate)
+        self.optimiser = optim.Adam(self.VAE.parameters(), lr=self.learning_rate)
 
     def train(self, i, data, *, get_grad=False):
         # Get the input images

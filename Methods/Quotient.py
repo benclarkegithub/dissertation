@@ -40,16 +40,21 @@ class Quotient(Method):
                  std=0.05,
                  hidden_size=None,
                  clip=None):
-        super().__init__(num_latents=num_latents, type="Single")
+        super().__init__(
+            num_latents=num_latents,
+            type="Single",
+            learning_rate=learning_rate,
+            size=size,
+            channels=channels,
+            out_channels=out_channels,
+            log_prob_fn=log_prob_fn,
+            std=std,
+            hidden_size=hidden_size)
 
         self.num_latents_group = num_latents_group
         self.num_groups = num_latents // num_latents_group
-        self.size = size
-        self.channels = channels
-        self.log_prob_fn = log_prob_fn
-        self.std = std
-        self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
         self.clip = clip
+
         # Options
         self.encoder_to_latents = encoder_to_latents
         self.resample = resample
