@@ -23,8 +23,10 @@ class Evaluate:
             make_dir(self.path)
         make_dir(self.params_path)
 
+        self.trial = trial
         self.log = log
         if seed is not None:
+            self.write_log(f"Seed: {seed}")
             self.seed_everything(seed)
 
         # To get reconstruction error (/dim) and ELBO (bits/dim)
@@ -38,6 +40,10 @@ class Evaluate:
         np.random.seed(seed)
 
     def train(self, train_loader, val_loader, max_epochs, max_no_improvement, *, get_grad=False, load_best=False):
+        # Print the trial
+        if self.trial is not None:
+            print(f"Trial {self.trial}...")
+
         # Try and load the model(s) and training progress
         self.load(best=load_best, verbose=True)
         training_progress = self.load_training()
@@ -613,15 +619,15 @@ class Evaluate:
                   avg_val_KLDs,
                   grad):
         message = f"[Epoch {epoch:3} ({epoch_time:.2f}s)]\t" \
-                  f"ELBO (bits/dim): {', '.join([f'{-x / self.denominator_bits:.3f}' for x in avg_train_losses])}" \
-                  f" ({', '.join([f'{-x / self.denominator_bits:.3f}' for x in avg_val_losses])})\t" \
-                  f"Reconstruction error (/dim): {', '.join([f'{x / self.denominator:.3f}' for x in avg_train_log_probs])}" \
-                  f" ({', '.join([f'{x / self.denominator:.3f}' for x in avg_val_log_probs])})\t" \
+                  f"ELBO (bits/dim): {', '.join([f'{-x / self.denominator_bits:.5f}' for x in avg_train_losses])}" \
+                  f" ({', '.join([f'{-x / self.denominator_bits:.5f}' for x in avg_val_losses])})\t" \
+                  f"Reconstruction error (/dim): {', '.join([f'{x / self.denominator:.5f}' for x in avg_train_log_probs])}" \
+                  f" ({', '.join([f'{x / self.denominator:.5f}' for x in avg_val_log_probs])})\t" \
                   f"KLD: {', '.join([f'{x:.3f}' for x in avg_train_KLDs])}" \
                   f" ({', '.join([f'{x:.3f}' for x in avg_val_KLDs])})"
 
         if grad is not None:
-            message += f"\tGrad: {', '.join([f'{x:.3f}' for x in grad])}"
+            message += f"\tGrad: {', '.join([f'{x:.1f}' for x in grad])}"
 
         # Log message
         self.write_log(message)
@@ -651,8 +657,8 @@ class Evaluate:
 
         message = f"Best epoch(s): {best_avg_val_epoch}\t"\
                   f"Training time(s): {', '.join([f'{x:.2f}s' for x in epoch_time_per_model])} ({epoch_time_total:.2f}s)\t" \
-                  f"Best ELBO (bits/dim): {best_train_ELBO:.3f} ({best_val_ELBO:.3f})\t" \
-                  f"Best reconstruction error (/dim): {best_train_log_prob:.3f} ({best_val_log_prob:.3f})"
+                  f"Best ELBO (bits/dim): {best_train_ELBO:.5f} ({best_val_ELBO:.5f})\t" \
+                  f"Best reconstruction error (/dim): {best_train_log_prob:.5f} ({best_val_log_prob:.5f})"
 
         # Log message
         self.write_log(message)
