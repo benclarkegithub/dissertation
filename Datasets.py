@@ -18,6 +18,7 @@ class Dataset:
             [transforms.ToTensor()]
         )
 
+        self.g = torch.Generator()
         if seed is not None:
             self.seed_everything(seed)
 
@@ -27,7 +28,6 @@ class Dataset:
         random.seed(seed)
         np.random.seed(seed)
         # https://pytorch.org/docs/stable/notes/randomness.html#dataloader
-        self.g = torch.Generator()
         self.g.manual_seed(seed)
 
     def get_train_loader(self):
@@ -61,7 +61,7 @@ class MNIST(Dataset):
         self.train_loader = torch.utils.data.DataLoader(
             train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
         self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
-        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
 
         # Index to label
         self.labels = [str(x) for x in range(10)]
@@ -85,7 +85,7 @@ class FashionMNIST(Dataset):
         self.train_loader = torch.utils.data.DataLoader(
             train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
         self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
-        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
 
         # Index to label
         self.labels = [
@@ -110,7 +110,7 @@ class Omniglot(Dataset):
         self.train_loader = torch.utils.data.DataLoader(
             train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
         self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
-        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
 
         # Index to label
         self.labels = [str(x) for x in range(1623)]
@@ -134,7 +134,7 @@ class CIFAR10(Dataset):
         self.train_loader = torch.utils.data.DataLoader(
             train_set, batch_size=self.batch_size, shuffle=True, worker_init_fn=seed_worker, generator=self.g)
         self.val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
-        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
 
         # Index to label
         self.labels = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
