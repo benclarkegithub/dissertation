@@ -187,7 +187,8 @@ class VAE(VAE2):
     def __init__(self,
                  num_latents,
                  num_latents_group=None,
-                 *, size=28,
+                 *,
+                 size=28,
                  channels=1,
                  out_channels=None,
                  hidden_size=None):
