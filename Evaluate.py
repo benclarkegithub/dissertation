@@ -217,7 +217,7 @@ class Evaluate:
             self.test_reconstruction(test_loader, reconstruction_opt)
 
         if output_images:
-            self.test_output_images(output_images_opt)
+            self.test_output_images(test_loader, output_images_opt)
 
         if conceptual_compression:
             self.test_conceptual_compression(test_loader, conceptual_compression_opt)
@@ -345,57 +345,73 @@ class Evaluate:
         y_labels = ["Rec", "Original"]
         plt.xticks(ticks=x_ticks, labels=x_labels)
         plt.yticks(ticks=y_ticks, labels=y_labels)
+        plt.tight_layout()
         plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-        plt.savefig(f"{self.path}/Reconstruction.png", dpi=300)
+        plt.savefig(f"{self.path}/Reconstruction.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
 
-    def test_output_images(self, output_images_opt):
+    def test_output_images(self, test_loader, output_images_opt):
         if not output_images_opt:
             # Set output images options if it doesn't exist
-            output_images_opt = {"range": 2.5, "number": 11, "size": 28, "channels": 1}
+            output_images_opt = {"range": 2.5, "number": 11, "size": 28, "channels": 1, "before": None, "after": None}
 
         # Get output images options
         range_opt = output_images_opt["range"]
         number = output_images_opt["number"]
         size = output_images_opt["size"]
         channels = output_images_opt["channels"]
+        before = output_images_opt["before"]
+        after = output_images_opt["after"]
         total_number = number ** 2
         size_with_padding = size + 2
         total_size_with_padding = number * size_with_padding
 
-        # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
-        X = np.linspace(start=-range_opt, stop=range_opt, num=number, dtype=np.single)
-        Y = np.linspace(start=range_opt, stop=-range_opt, num=number, dtype=np.single)
-        Z = torch.tensor([[x, y] for y in Y for x in X])
+        # Get the data
+        data = next(iter(test_loader))
+
+        # Get the output
+        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
 
         # Output images for every pair of latent variables, i.e. (z1, z2), (z3, z4), ...
         for z_i in np.arange(0, self.method.get_num_latents() - 1, 2):
-            Z_input = torch.zeros(total_number, self.method.get_num_latents())
-            Z_input[:, z_i:z_i + 2] = Z
+            if ((before is None) or (after is None)) or ((z_i <= before) or (z_i >= after)):
+                # Make a Z tensor in the range, e.g. [-2.5, 2.5], [-2.0, 2.5], ...
+                X_start = -range_opt + output["mu"][0][z_i]
+                X_stop = range_opt + output["mu"][0][z_i]
+                X = np.linspace(start=X_start, stop=X_stop, num=number, dtype=np.single)
 
-            # Get output
-            z_dec, logits = self.method.z_to_logits(Z_input)
+                Y_start = range_opt + output["mu"][0][z_i + 1]
+                Y_stop = -range_opt + output["mu"][0][z_i + 1]
+                Y = np.linspace(start=Y_start, stop=Y_stop, num=number, dtype=np.single)
+                Z = torch.tensor([[x, y] for y in Y for x in X])
 
-            # Make grid of images
-            if channels == 1:
-                images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, channels, size, size)
-            else:
-                images = torch.sigmoid(logits).reshape(total_number, channels, size, size)
-            images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+                Z_input = output["mu"][0].repeat(total_number, 1)
+                Z_input[:, z_i:z_i + 2] = Z
 
-            # Create and display the 2D graph
-            plt.title(f"{type(self.method).__name__} {self.experiment} output images (z{z_i + 1} & z{z_i + 2})")
-            plt.xlabel(f"z{z_i + 1}")
-            plt.ylabel(f"z{z_i + 2}")
-            x_ticks = np.linspace(
-                start=0, stop=total_size_with_padding - size_with_padding, num=number) + (size // 2) + 1
-            y_ticks = np.linspace(
-                start=total_size_with_padding - size_with_padding, stop=0, num=number) + (size // 2) + 1
-            plt.xticks(ticks=x_ticks, labels=X)
-            plt.yticks(ticks=y_ticks, labels=X)
-            plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-            plt.savefig(f"{self.path}/Output_Images_z{z_i + 1}_z{z_i + 2}.png", dpi=300)
-            plt.show(dpi=300)
+                # Get output
+                z_dec, logits = self.method.z_to_logits(Z_input)
+
+                # Make grid of images
+                if channels == 1:
+                    images = torch.sigmoid(logits).unsqueeze(dim=1).reshape(total_number, channels, size, size)
+                else:
+                    images = torch.sigmoid(logits).reshape(total_number, channels, size, size)
+                images_grid = torchvision.utils.make_grid(tensor=images, nrow=number)
+
+                # Create and display the 2D graph
+                plt.title(f"{type(self.method).__name__} {self.experiment} output images (z{z_i + 1} & z{z_i + 2})")
+                plt.xlabel(f"z{z_i + 1}")
+                plt.ylabel(f"z{z_i + 2}")
+                x_ticks = np.linspace(
+                    start=0, stop=total_size_with_padding - size_with_padding, num=number) + (size // 2) + 1
+                y_ticks = np.linspace(
+                    start=total_size_with_padding - size_with_padding, stop=0, num=number) + (size // 2) + 1
+                plt.xticks(ticks=x_ticks, labels=[f"{x:.1f}" for x in X])
+                plt.yticks(ticks=y_ticks, labels=[f"{y:.1f}" for y in Y[::-1]])
+                plt.tight_layout()
+                plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
+                plt.savefig(f"{self.path}/Output_Images_z{z_i + 1}_z{z_i + 2}.png", dpi=300, bbox_inches="tight")
+                plt.show(dpi=300)
 
     def test_conceptual_compression(self, test_loader, conceptual_compression_opt):
         if not conceptual_compression_opt:
@@ -503,8 +519,9 @@ class Evaluate:
             y_labels = [f"Z{i + 1}" for i in order[::-1]] + ["Original"]
             plt.xticks(ticks=x_ticks, labels=x_labels)
             plt.yticks(ticks=y_ticks, labels=y_labels)
+            plt.tight_layout()
             plt.imshow(X=np.transpose(images_grid.numpy(), (1, 2, 0)))
-            plt.savefig(path, dpi=300)
+            plt.savefig(path, dpi=300, bbox_inches="tight")
             plt.show(dpi=300)
 
         order = range(self.method.get_num_groups())
@@ -703,8 +720,9 @@ class Evaluate:
         plt.title(f"{type(self.method).__name__} {self.experiment} average ELBO")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. ELBO (bits/dim)")
+        plt.tight_layout()
         plt.legend()
-        plt.savefig(f"{self.path}/ELBO.png", dpi=300)
+        plt.savefig(f"{self.path}/ELBO.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
 
     def plot_training_reconstruction(self, avg_train_log_prob, avg_val_log_prob):
@@ -734,8 +752,9 @@ class Evaluate:
         plt.title(f"{type(self.method).__name__} {self.experiment} average reconstruction error")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. reconstruction error (/dim)")
+        plt.tight_layout()
         plt.legend()
-        plt.savefig(f"{self.path}/Reconstruction_Error.png", dpi=300)
+        plt.savefig(f"{self.path}/Reconstruction_Error.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
 
     def plot_training_KLD(self, avg_train_KLD, avg_val_KLD):
@@ -755,8 +774,9 @@ class Evaluate:
         plt.title(f"{type(self.method).__name__} {self.experiment} average training KL divergence")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
+        plt.tight_layout()
         plt.legend()
-        plt.savefig(f"{self.path}/KLD_train.png", dpi=300)
+        plt.savefig(f"{self.path}/KLD_train.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
 
         # Validation
@@ -774,8 +794,9 @@ class Evaluate:
         plt.title(f"{type(self.method).__name__} {self.experiment} avg. validation KL divergence")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. KL divergence")
+        plt.tight_layout()
         plt.legend()
-        plt.savefig(f"{self.path}/KLD_val.png", dpi=300)
+        plt.savefig(f"{self.path}/KLD_val.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
 
     def plot_grad(self, grad):
@@ -794,6 +815,7 @@ class Evaluate:
         plt.title(f"{type(self.method).__name__} {self.experiment} average gradient norm")
         plt.xlabel("Epoch")
         plt.ylabel("Avg. gradient norm")
+        plt.tight_layout()
         plt.legend()
-        plt.savefig(f"{self.path}/Gradient.png", dpi=300)
+        plt.savefig(f"{self.path}/Gradient.png", dpi=300, bbox_inches="tight")
         plt.show(dpi=300)
