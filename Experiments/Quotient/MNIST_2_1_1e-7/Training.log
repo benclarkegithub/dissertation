@@ -1,0 +1,48 @@
+Seed: 2030
+=================================================================
+Layer (type:depth-idx)                   Param #
+=================================================================
+Quotient                                 --
+├─Canvas: 1-1                            --
+│    └─Linear: 2-1                       784
+├─KL: 1-2                                --
+│    └─Linear: 2-2                       1
+│    └─Linear: 2-3                       1
+├─Encoder: 1-3                           --
+│    └─Linear: 2-4                       76,930
+│    └─Linear: 2-5                       9,702
+├─EncoderToLatents: 1-4                  --
+│    └─Linear: 2-6                       99
+│    └─Linear: 2-7                       99
+├─ModuleList: 1-5                        --
+│    └─LatentsToDecoder: 2-8             --
+│    │    └─Linear: 3-1                  196
+│    └─LatentsToDecoder: 2-9             --
+│    │    └─Linear: 3-2                  196
+├─Decoder: 1-6                           --
+│    └─Linear: 2-10                      9,702
+│    └─Linear: 2-11                      77,616
+=================================================================
+Total params: 175,326
+Trainable params: 175,326
+Non-trainable params: 0
+=================================================================
+[Epoch   1 (28.39s)]	ELBO (bits/dim): -0.31421, -0.46031 (-0.26901)	Reconstruction error (/dim): 0.24331, 0.25644 (0.25572)	KLD: 0.047, 0.051 (0.104)	Grad: 327281.6
+[Epoch   2 (26.33s)]	ELBO (bits/dim): -0.20204, -1.38747 (-0.39712)	Reconstruction error (/dim): 0.24284, 0.25598 (0.25660)	KLD: 0.049, 0.047 (0.104)	Grad: 325157.6
+[Epoch   3 (24.96s)]	ELBO (bits/dim): -0.22149, -0.39544 (-0.54264)	Reconstruction error (/dim): 0.24279, 0.25528 (0.25441)	KLD: 0.050, 0.045 (0.094)	Grad: 297337.2
+[Epoch   4 (27.39s)]	ELBO (bits/dim): -0.33627, -0.73922 (-1.14478)	Reconstruction error (/dim): 0.24262, 0.25529 (0.25536)	KLD: 0.051, 0.045 (0.105)	Grad: 314715.0
+[Epoch   5 (27.11s)]	ELBO (bits/dim): -0.39878, -0.93723 (-0.49757)	Reconstruction error (/dim): 0.24231, 0.25505 (0.25501)	KLD: 0.049, 0.047 (0.094)	Grad: 306918.8
+[Epoch   6 (26.70s)]	ELBO (bits/dim): -0.34791, -0.59869 (-0.26574)	Reconstruction error (/dim): 0.24170, 0.25434 (0.25328)	KLD: 0.048, 0.046 (0.095)	Grad: 312671.7
+[Epoch   7 (27.64s)]	ELBO (bits/dim): -0.64088, -19.51917 (-1.82994)	Reconstruction error (/dim): 0.24192, 0.25399 (0.25348)	KLD: 0.049, 0.048 (0.087)	Grad: 326111.8
+[Epoch   8 (26.64s)]	ELBO (bits/dim): -0.55230, -0.67623 (-0.21345)	Reconstruction error (/dim): 0.24152, 0.25376 (0.25442)	KLD: 0.049, 0.049 (0.092)	Grad: 321735.6
+[Epoch   9 (29.47s)]	ELBO (bits/dim): -0.16984, -0.60752 (-0.32390)	Reconstruction error (/dim): 0.24133, 0.25303 (0.25378)	KLD: 0.048, 0.045 (0.082)	Grad: 306805.7
+[Epoch  10 (27.80s)]	ELBO (bits/dim): -0.16254, -1.54661 (-0.26317)	Reconstruction error (/dim): 0.24093, 0.25277 (0.25272)	KLD: 0.047, 0.051 (0.112)	Grad: 278303.7
+[Epoch  11 (27.38s)]	ELBO (bits/dim): -0.27803, -0.48333 (-2.24205)	Reconstruction error (/dim): 0.24077, 0.25232 (0.25199)	KLD: 0.052, 0.045 (0.113)	Grad: 287649.4
+[Epoch  12 (26.61s)]	ELBO (bits/dim): -0.24884, -0.38060 (-0.30434)	Reconstruction error (/dim): 0.24070, 0.25181 (0.25081)	KLD: 0.050, 0.046 (0.077)	Grad: 320518.3
+[Epoch  13 (25.75s)]	ELBO (bits/dim): -0.22517, -0.48832 (-1.72956)	Reconstruction error (/dim): 0.24023, 0.25164 (0.25020)	KLD: 0.048, 0.051 (0.114)	Grad: 289163.1
+[Epoch  14 (29.57s)]	ELBO (bits/dim): -0.55083, -0.60257 (-0.23661)	Reconstruction error (/dim): 0.24021, 0.25096 (0.25096)	KLD: 0.046, 0.049 (0.102)	Grad: 335137.2
+[Epoch  15 (27.92s)]	ELBO (bits/dim): -0.30647, -0.60582 (-1.50516)	Reconstruction error (/dim): 0.23980, 0.25088 (0.25039)	KLD: 0.048, 0.048 (0.091)	Grad: 305712.9
+[Epoch  16 (25.71s)]	ELBO (bits/dim): -0.24730, -0.50536 (-0.38742)	Reconstruction error (/dim): 0.23947, 0.25016 (0.25091)	KLD: 0.050, 0.047 (0.094)	Grad: 277779.4
+[Epoch  17 (26.15s)]	ELBO (bits/dim): -0.31921, -0.56240 (-0.42382)	Reconstruction error (/dim): 0.23934, 0.25030 (0.25076)	KLD: 0.046, 0.047 (0.082)	Grad: 317834.1
+No improvement after 10 epochs...
+Best epoch(s): [8]	Training time(s): 461.51s (461.51s)	Best ELBO (bits/dim): -0.38060 (-0.21345)	Best reconstruction error (/dim): 0.25644 (0.25660)
