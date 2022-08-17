@@ -53,6 +53,7 @@ class RNN(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
+                 beta=1,
                  std=0.05,
                  hidden_size=None,
                  clip=None):
@@ -64,6 +65,7 @@ class RNN(Method):
             channels=channels,
             out_channels=out_channels,
             log_prob_fn=log_prob_fn,
+            beta=beta,
             std=std,
             hidden_size=hidden_size)
 
@@ -283,6 +285,7 @@ class RNN(Method):
                 KLD_fn="N",
                 mu=mu,
                 logvar=logvar,
+                beta=self.beta,
                 std=self.std)
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
@@ -474,6 +477,7 @@ class RNN(Method):
             KLD_fn="N",
             mu=mu,
             logvar=logvar,
+            beta=self.beta,
             std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]

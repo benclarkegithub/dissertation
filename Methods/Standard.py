@@ -15,6 +15,7 @@ class Standard(Method):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
+                 beta=1,
                  std=0.05,
                  hidden_size=None):
         super().__init__(
@@ -25,6 +26,7 @@ class Standard(Method):
             channels=channels,
             out_channels=out_channels,
             log_prob_fn=log_prob_fn,
+            beta=beta,
             std=std,
             hidden_size=hidden_size)
 
@@ -46,13 +48,15 @@ class Standard(Method):
 
         # Forward, backward, loss
         output = self.VAE(images)
-        loss, log_prob, KLD = self.ELBO(
+        loss, log_prob, KLDs = self.ELBO(
             output["logits"],
             images.view(-1, self.channels * (self.size ** 2)),
             log_prob_fn=self.log_prob_fn,
             KLD_fn="N",
+            KLD_multiple=True,
             mu=output["mu"],
             logvar=output["logvar"],
+            beta=self.beta,
             std=self.std)
         # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
         loss = -loss
@@ -71,7 +75,7 @@ class Standard(Method):
         # Step
         self.optimiser.step()
 
-        return [loss.item()], [log_prob.item()], [KLD.item()], [grad]
+        return [loss.item()], [log_prob.item()], KLDs.tolist(), [grad]
 
     @torch.no_grad()
     def test(self, i, data):
@@ -89,6 +93,7 @@ class Standard(Method):
             KLD_fn="N",
             mu=output["mu"],
             logvar=output["logvar"],
+            beta=self.beta,
             std=self.std)
 
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]
