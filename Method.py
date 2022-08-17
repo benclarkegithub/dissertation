@@ -10,6 +10,7 @@ class Method(ABC):
                  channels=1,
                  out_channels=None,
                  log_prob_fn="CB",
+                 beta=1,
                  std=0.05,
                  hidden_size=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,6 +24,7 @@ class Method(ABC):
         self.channels = channels
         self.out_channels = out_channels
         self.log_prob_fn = log_prob_fn
+        self.beta = beta
         self.std = std
         self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
@@ -101,7 +103,7 @@ class Method(ABC):
     def get_hidden_size(self):
         return self.hidden_size
 
-    def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05):
+    def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", KLD_multiple=False, mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05):
         if log_prob_fn == "CB":
             log_prob = self.CB_log_prob_fn(logits, x)
         elif log_prob_fn == "N":
@@ -117,7 +119,7 @@ class Method(ABC):
 
         reconstruction_error = ((x - torch.sigmoid(logits)) ** 2).sum(dim=-1)
 
-        return (log_prob - (beta * KLD)).mean(), reconstruction_error.mean(), KLD.mean()
+        return (log_prob - (beta * KLD).sum(dim=-1)).mean(), reconstruction_error.mean(), KLD.sum(dim=-1).mean() if not KLD_multiple else KLD.mean(dim=0)
 
     def CB_log_prob_fn(self, logits, x):
         # The continuous Bernoulli: fixing a pervasive error in variational autoencoders, Loaiza-Ganem G and Cunningham
@@ -142,7 +144,7 @@ class Method(ABC):
         return MSE_sum
 
     def KLD_N_fn(self, mu, logvar):
-        return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp()).sum(dim=-1)
+        return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp())
 
     def KLD_Custom_fn(self, log_p, log_q):
-        return (log_q - log_p).sum(dim=-1)
+        return (log_q - log_p)
