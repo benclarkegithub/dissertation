@@ -317,25 +317,9 @@ class RNN(Method):
         if get_grad:
             grad_temp = []
 
-            # Components that are the same for each group
-            components = [self.canvas, self.encoder, self.decoder]
-            components += self.lats_to_dec
-            components += [self.encoder_2] if self.encoder_2 is not None else []
-            components += [self.enc_enc_to_enc] if self.enc_enc_to_enc is not None else []
-            components += [self.enc_to_lat] if self.enc_to_lat is not None else []
-            components += [self.lats_to_lats] if self.lats_to_lats is not None else []
-            # Components that are the unique for each group
-            components += [
-                self.enc_to_lats[j] for j in range(self.num_groups)] if self.enc_to_lats is not None else []
-            components += [
-                self.enc_lats_to_lats[j] for j in range(self.num_groups)] if self.enc_lats_to_lats is not None else []
-            components += [
-                self.enc_enc_to_lats[j] for j in range(self.num_groups)] if self.enc_enc_to_lats is not None else []
-
-            for x in components:
-                for name, param in x.named_parameters():
-                    if param.grad is not None:
-                        grad_temp.append(param.grad.flatten())
+            for name, param in self.model.named_parameters():
+                if param.grad is not None:
+                    grad_temp.append(param.grad.flatten())
 
             grads.append(torch.linalg.norm(torch.cat(grad_temp)))
 
@@ -501,48 +485,10 @@ class RNN(Method):
         return output, [-loss.item()], [log_prob.item()], [KLD.item()]
 
     def save(self, path):
-        torch.save(self.canvas.state_dict(), f"{path}_canvas.pth")
-        torch.save(self.encoder.state_dict(), f"{path}.pth")
-        if self.encoders:
-            torch.save(self.encoder_2.state_dict(), f"{path}_enc_2.pth")
-        if self.reconstruction and (self.to_latents == "Encoder"):
-            torch.save(self.enc_enc_to_enc.state_dict(), f"{path}_enc_enc_to_enc.pth")
-        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-            if not self.encoder_to_latents:
-                torch.save(self.enc_to_lat.state_dict(), f"{path}_enc_to_lat.pth")
-            else:
-                for i, x in enumerate(self.enc_to_lats):
-                    torch.save(x.state_dict(), f"{path}_enc_to_lats_{i}.pth")
-        elif self.to_latents == "EncoderLatents":
-            for i, x in enumerate(self.enc_lats_to_lats):
-                torch.save(x.state_dict(), f"{path}_enc_lats_to_lats_{i}.pth")
-        if self.to_latents == "Latents":
-            torch.save(self.lats_to_lats.state_dict(), f"{path}_lats_to_lats.pth")
-        for i, x in enumerate(self.lats_to_dec):
-            torch.save(x.state_dict(), f"{path}_lat_to_dec_{i}.pth")
-        torch.save(self.decoder.state_dict(), f"{path}_dec.pth")
+        torch.save(self.model.state_dict(), f"{path}.pth")
 
     def load(self, path):
-        self.canvas.load_state_dict(torch.load(f"{path}_canvas.pth"))
-        self.encoder.load_state_dict(torch.load(f"{path}.pth"))
-        if self.encoders:
-            self.encoder_2.load_state_dict(torch.load(f"{path}_enc_2.pth"))
-        if self.reconstruction and (self.to_latents == "Encoder"):
-            self.enc_enc_to_enc.load_state_dict(torch.load(f"{path}_enc_enc_to_enc.pth"))
-        if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
-            if not self.encoder_to_latents:
-                self.enc_to_lat.load_state_dict(torch.load(f"{path}_enc_to_lat.pth"))
-            else:
-                for i, x in enumerate(self.enc_to_lats):
-                    x.load_state_dict(torch.load(f"{path}_enc_to_lats_{i}.pth"))
-        elif self.to_latents == "EncoderLatents":
-            for i, x in enumerate(self.enc_lats_to_lats):
-                x.load_state_dict(torch.load(f"{path}_enc_lats_to_lats_{i}.pth"))
-        if self.to_latents == "Latents":
-            self.lats_to_lats.load_state_dict(torch.load(f"{path}_lats_to_lats.pth"))
-        for i, x in enumerate(self.lats_to_dec):
-            x.load_state_dict(torch.load(f"{path}_lat_to_dec_{i}.pth"))
-        self.decoder.load_state_dict(torch.load(f"{path}_dec.pth"))
+        self.model.load_state_dict(torch.load(f"{path}.pth"))
 
     def summary(self):
         return str(summary(self.model, verbose=False))
