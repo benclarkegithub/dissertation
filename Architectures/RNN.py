@@ -13,6 +13,7 @@ class RNN(nn.Module):
                  enc_to_lat=None,
                  enc_to_lats=None,
                  enc_lats_to_lats=None,
+                 enc_enc_to_lats=None,
                  lats_to_lats=None):
         super().__init__()
 
@@ -34,6 +35,9 @@ class RNN(nn.Module):
         # Encoder Latents to Latents
         if enc_lats_to_lats:
             self.enc_lats_to_lats = nn.ModuleList([x for x in enc_lats_to_lats])
+        # Encoder Encoder to Latents
+        if enc_enc_to_lats:
+            self.enc_enc_to_lats = nn.ModuleList([x for x in enc_enc_to_lats])
         # Latents to Latents
         if lats_to_lats:
             self.lats_to_lats = lats_to_lats

@@ -20,6 +20,7 @@ encoders
 to_latents
     "Encoder":          p(z | x) if reconstruction is False else p(z | x, x̂)
     "EncoderLatents":   p(z | x, z_1, …, z_n-1) if reconstruction is False else p(z | x, x̂, z_1, …, z_n-1)
+    "EncoderEncoder":   ...
     "Latents":          p(z | z_a, z_b) where z_a = z | x, z_b = z | x̂
             
 encoder_to_latents
@@ -102,6 +103,7 @@ class RNN(Method):
         self.enc_to_lat = None
         self.enc_to_lats = None
         self.enc_lats_to_lats = None
+        self.enc_enc_to_lats = None
         if (self.to_latents == "Encoder") or (self.to_latents == "Latents"):
             if not self.encoder_to_latents:
                 self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
@@ -117,6 +119,13 @@ class RNN(Method):
             self.enc_lats_to_lats = [
                 architecture["EncoderLatentsToLatents"](hidden_size_temp, group, num_latents_group).to(self.device)
                 for group in range(self.num_groups)]
+
+        # Encoder Encoder to Latents
+        elif self.to_latents == "EncoderEncoder":
+            self.enc_enc_to_lats = [
+                architecture["EncoderEncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
+                for _ in range(self.num_groups)
+            ]
 
         # Latents to Latents
         self.lats_to_lats = None
@@ -142,6 +151,7 @@ class RNN(Method):
             enc_to_lat=self.enc_to_lat,
             enc_to_lats=self.enc_to_lats,
             enc_lats_to_lats=self.enc_lats_to_lats,
+            enc_enc_to_lats=self.enc_enc_to_lats,
             lats_to_lats=self.lats_to_lats)
         self.optimiser_model = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
@@ -238,6 +248,9 @@ class RNN(Method):
                     mu_temp = mu.detach() if mu is not None else None
                     logvar_temp = logvar.detach() if logvar is not None else None
                     mu_2, logvar_2 = self.enc_lats_to_lats[group](x, mu_temp, logvar_temp)
+                elif self.to_latents == "EncoderEncoder":
+                    x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    mu_2, logvar_2 = self.enc_enc_to_lats[group](x)
                 elif self.to_latents == "Latents":
                     if not self.encoder_to_latents:
                         mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
@@ -316,6 +329,8 @@ class RNN(Method):
                 self.enc_to_lats[j] for j in range(self.num_groups)] if self.enc_to_lats is not None else []
             components += [
                 self.enc_lats_to_lats[j] for j in range(self.num_groups)] if self.enc_lats_to_lats is not None else []
+            components += [
+                self.enc_enc_to_lats[j] for j in range(self.num_groups)] if self.enc_enc_to_lats is not None else []
 
             for x in components:
                 for name, param in x.named_parameters():
@@ -423,6 +438,9 @@ class RNN(Method):
                     mu_temp = mu if mu is not None else None
                     logvar_temp = logvar if logvar is not None else None
                     mu_2, logvar_2 = self.enc_lats_to_lats[group](x, mu_temp, logvar_temp)
+                elif self.to_latents == "EncoderEncoder":
+                    x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    mu_2, logvar_2 = self.enc_enc_to_lats[group](x)
                 elif self.to_latents == "Latents":
                     if not self.encoder_to_latents:
                         mu_2, logvar_2 = self.lats_to_lats(mu_images, logvar_images, mu_1, logvar_1)
