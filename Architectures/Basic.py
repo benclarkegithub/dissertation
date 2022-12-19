@@ -125,6 +125,75 @@ class EncoderEncoderToLatents(nn.Module):
         return mu, logvar
 
 
+class EncoderEncoderToLatents2(nn.Module):
+    def __init__(self, hidden_size, num_latents_group):
+        super().__init__()
+
+        # Fully-connected layers
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size // 2)
+        self.fc2 = nn.Linear(hidden_size // 2, hidden_size // 2)
+        self.fc_mean = nn.Linear(hidden_size // 2, num_latents_group)
+        self.fc_logvar = nn.Linear(hidden_size // 2, num_latents_group)
+
+    def forward(self, x):
+        # hidden_size * 2 -> hidden_size // 2
+        x = F.leaky_relu(self.fc1(x))
+        # hidden_size // 2 -> hidden_size // 2
+        x = F.leaky_relu(self.fc2(x))
+        # hidden_size // 2 -> num_latents_group
+        mu = self.fc_mean(x)
+        logvar = self.fc_logvar(x)
+
+        return mu, logvar
+
+
+class EncoderEncoderToLatents3(nn.Module):
+    def __init__(self, hidden_size, num_latents_group):
+        super().__init__()
+
+        # Fully-connected layers
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size // 2)
+        self.fc2 = nn.Linear(hidden_size // 2, hidden_size // 8)
+        self.fc3 = nn.Linear(hidden_size // 8, hidden_size // 32)
+        self.fc_mean = nn.Linear(hidden_size // 32, num_latents_group)
+        self.fc_logvar = nn.Linear(hidden_size // 32, num_latents_group)
+
+    def forward(self, x):
+        # hidden_size * 2 -> hidden_size // 2
+        x = F.leaky_relu(self.fc1(x))
+        # hidden_size // 2 -> hidden_size // 8
+        x = F.leaky_relu(self.fc2(x))
+        # hidden_size // 8 -> hidden_size // 32
+        x = F.leaky_relu(self.fc3(x))
+        # hidden_size // 32 -> num_latents_group
+        mu = self.fc_mean(x)
+        logvar = self.fc_logvar(x)
+
+        return mu, logvar
+
+
+class EncoderEncoderToLatents4(nn.Module):
+    def __init__(self, hidden_size, num_latents_group):
+        super().__init__()
+
+        # Fully-connected layers
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size // 4)
+        self.fc2 = nn.Linear(hidden_size // 4, hidden_size // 32)
+        self.fc_mean = nn.Linear(hidden_size // 32, num_latents_group)
+        self.fc_logvar = nn.Linear(hidden_size // 32, num_latents_group)
+
+    def forward(self, x):
+        # hidden_size * 2 -> hidden_size // 4
+        x = F.leaky_relu(self.fc1(x))
+        # hidden_size // 4 -> hidden_size // 32
+        x = F.leaky_relu(self.fc2(x))
+        # hidden_size // 32 -> num_latents_group
+        mu = self.fc_mean(x)
+        logvar = self.fc_logvar(x)
+
+        return mu, logvar
+
+
 class LatentsToLatents(nn.Module):
     def __init__(self, num_latents_group):
         super().__init__()
