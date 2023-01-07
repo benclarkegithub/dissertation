@@ -23,8 +23,8 @@ class VAE(nn.Module):
         self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
         self.encoder = Encoder(size, channels, self.hidden_size, out_channels)
-        self.enc_to_lat = [EncoderToLatents(self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
-        self.lat_to_dec = [LatentsToDecoder(self.hidden_size, num_latents_group) for _ in range(self.num_groups)]
+        self.enc_to_lat = nn.ModuleList([EncoderToLatents(self.hidden_size, num_latents_group) for _ in range(self.num_groups)])
+        self.lat_to_dec = nn.ModuleList([LatentsToDecoder(self.hidden_size, num_latents_group) for _ in range(self.num_groups)])
         self.decoder = Decoder(self.hidden_size, size, channels, out_channels)
 
     def forward(self, x, *, reparameterise=True):
