@@ -22,6 +22,7 @@ to_latents
     "EncoderLatents":   p(z | x, z_1, …, z_n-1) if reconstruction is False else p(z | x, x̂, z_1, …, z_n-1)
     "EncoderEncoder":   ...
     "Latents":          p(z | z_a, z_b) where z_a = z | x, z_b = z | x̂
+    "Latents2":         ...
             
 encoder_to_latents
     True:   Many sets of parameters for encoding to latent variable(s)
@@ -111,6 +112,13 @@ class RNN(Method):
                 self.enc_to_lats = [
                     architecture["EncoderToLatents"](self.hidden_size, num_latents_group).to(self.device)
                     for _ in range(self.num_groups)]
+        elif (self.to_latents == "Latents2"):
+            if not self.encoder_to_latents:
+                self.enc_to_lat = architecture["EncoderToLatents"](self.hidden_size).to(self.device)
+            else:
+                self.enc_to_lats = [
+                    architecture["EncoderToLatents"](self.hidden_size).to(self.device)
+                    for _ in range(self.num_groups)]
 
         # Encoder Latents to Latents
         elif self.to_latents == "EncoderLatents":
@@ -131,6 +139,8 @@ class RNN(Method):
         self.lats_to_lats = None
         if self.to_latents == "Latents":
             self.lats_to_lats = architecture["LatentsToLatents"](num_latents_group).to(self.device)
+        elif self.to_latents == "Latents2":
+            self.lats_to_lats = architecture["LatentsToLatents"](hidden_size, num_latents_group).to(self.device)
 
         # Latents to Decoder
         self.lats_to_dec = [
@@ -155,7 +165,7 @@ class RNN(Method):
             lats_to_lats=self.lats_to_lats)
         self.optimiser_model = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
-    def train(self, i, data, *, get_grad=False, model=None):
+    def train(self, epoch, i, data, *, get_grad=False, model=None):
         losses = []
         log_probs = []
         KLDs = []
@@ -244,7 +254,13 @@ class RNN(Method):
                 if self.to_latents == "Encoder":
                     mu_2, logvar_2 = mu_1, logvar_1
                 elif self.to_latents == "EncoderLatents":
-                    x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    if not self.encoders:
+                        x = torch.cat([x_enc_images, x_enc_rec], dim=1)
+                    else:
+                        if (epoch % 2) == 0:
+                            x = torch.cat([x_enc_images.detach(), x_enc_rec], dim=1)
+                        else:
+                            x = torch.cat([x_enc_images, x_enc_rec.detach()], dim=1)
                     mu_temp = mu.detach() if mu is not None else None
                     logvar_temp = logvar.detach() if logvar is not None else None
                     mu_2, logvar_2 = self.enc_lats_to_lats[group](x, mu_temp, logvar_temp)
@@ -257,6 +273,11 @@ class RNN(Method):
                     else:
                         mu_2, logvar_2 = self.lats_to_lats(
                             mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
+                elif self.to_latents == "Latents2":
+                    x_enc_images_2 = self.enc_to_lats[group](x_enc_images)
+                    x_enc_rec_2 = self.enc_to_lats[group](x_enc_rec)
+                    x = torch.cat([x_enc_images_2, x_enc_rec_2], dim=1)
+                    mu_2, logvar_2 = self.lats_to_lats(x)
 
             # Detach mu, logvar for Z_<n if backprop == False
             if self.backprop:
@@ -431,6 +452,11 @@ class RNN(Method):
                     else:
                         mu_2, logvar_2 = self.lats_to_lats(
                             mu_images[:, start:end], logvar_images[:, start:end], mu_1, logvar_1)
+                elif self.to_latents == "Latents2":
+                    x_enc_images_2 = self.enc_to_lats[group](x_enc_images)
+                    x_enc_rec_2 = self.enc_to_lats[group](x_enc_rec)
+                    x = torch.cat([x_enc_images_2, x_enc_rec_2], dim=1)
+                    mu_2, logvar_2 = self.lats_to_lats(x)
 
             mu = torch.cat([mu, mu_2], dim=1) if mu is not None else mu_2
             logvar = torch.cat([logvar, logvar_2], dim=1) if logvar is not None else logvar_2

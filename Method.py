@@ -29,7 +29,7 @@ class Method(ABC):
         self.hidden_size = hidden_size if hidden_size is not None else channels * (size ** 2) // 8
 
     @abstractmethod
-    def train(self, i, data, *, get_grad=False):
+    def train(self, epoch, i, data, *, get_grad=False):
         pass
 
     @abstractmethod

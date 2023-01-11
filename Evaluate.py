@@ -98,10 +98,10 @@ class Evaluate:
                 for i, data in enumerate(train_loader):
                     # If the method has multiple models, pass the model number
                     if self.method.get_type() == "Single":
-                        losses, log_probs, KLDs, grads = self.method.train(i=i, data=data, get_grad=get_grad)
+                        losses, log_probs, KLDs, grads = self.method.train(epoch=epoch, i=i, data=data, get_grad=get_grad)
                     else:
                         losses, log_probs, KLDs, grads = self.method.train(
-                            i=i, data=data, get_grad=get_grad, model=model)
+                            epoch=epoch, i=i, data=data, get_grad=get_grad, model=model)
                     avg_train_loss_2.append(losses)
                     avg_train_log_prob_2.append(log_probs)
                     avg_train_KLD_2.append(KLDs)
