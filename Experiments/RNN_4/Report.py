@@ -1,6 +1,6 @@
-from Architectures.Basic import Canvas, Encoder, EncoderEncoderToEncoder, EncoderToLatents, EncoderEncoderToLatents,\
-    EncoderEncoderToLatents2, EncoderEncoderToLatents3, EncoderEncoderToLatents4, LatentsToLatents, \
-    LatentsToLatentsComplicated, LatentsToDecoder, Decoder
+from Architectures.Basic import Canvas, Encoder, EncoderEncoderToEncoder, EncoderToLatents, EncoderToLatents2,\
+    EncoderEncoderToLatents, EncoderEncoderToLatents2, EncoderEncoderToLatents3, EncoderEncoderToLatents4,\
+    LatentsToLatents, LatentsToLatents2, LatentsToLatentsComplicated, LatentsToDecoder, Decoder
 from Datasets import CIFAR10
 from Methods.RNN import RNN
 from Experiments import Experiments
@@ -75,6 +75,32 @@ CIFAR10_64_4_R_EETL2 = RNN(
     hidden_size=HIDDEN_SIZE,
     clip=CLIP)
 
+ARCHITECTURE_64_4_R_EETL2_2 = {
+    "Canvas": Canvas,
+    "Encoder": Encoder,
+    "EncoderEncoderToLatents": EncoderEncoderToLatents2,
+    "LatentsToDecoder": LatentsToDecoder,
+    "Decoder": Decoder
+}
+
+CIFAR10_64_4_R_EETL2_2 = RNN(
+    architecture=ARCHITECTURE_64_4_R_EETL2_2,
+    num_latents=NUM_LATENTS,
+    num_latents_group=NUM_LATENTS_GROUP,
+    reconstruction=True,
+    encoders=True,
+    to_latents="EncoderEncoder",
+    encoder_to_latents=True,
+    backprop=True,
+    resample=True,
+    type=TYPE,
+    size=SIZE,
+    channels=CHANNELS,
+    log_prob_fn=LOG_PROB_FN,
+    std=STD,
+    hidden_size=HIDDEN_SIZE,
+    clip=CLIP)
+
 ARCHITECTURE_64_4_R_EETL3 = {
     "Canvas": Canvas,
     "Encoder": Encoder,
@@ -101,7 +127,7 @@ CIFAR10_64_4_R_EETL3 = RNN(
     hidden_size=HIDDEN_SIZE,
     clip=CLIP)
 
-ARCHITECTURE_64_4_R_EETL4 = {
+ARCHITECTURE_CIFAR10_64_4_R_EETL4 = {
     "Canvas": Canvas,
     "Encoder": Encoder,
     "EncoderEncoderToLatents": EncoderEncoderToLatents4,
@@ -110,7 +136,7 @@ ARCHITECTURE_64_4_R_EETL4 = {
 }
 
 CIFAR10_64_4_R_EETL4 = RNN(
-    architecture=ARCHITECTURE_64_4_R_EETL4,
+    architecture=ARCHITECTURE_CIFAR10_64_4_R_EETL4,
     num_latents=NUM_LATENTS,
     num_latents_group=NUM_LATENTS_GROUP,
     reconstruction=True,
@@ -181,6 +207,33 @@ CIFAR10_64_4_R_LTL = RNN(
     hidden_size=HIDDEN_SIZE,
     clip=CLIP)
 
+ARCHITECTURE_CIFAR10_64_4_R_LTL_2 = {
+    "Canvas": Canvas,
+    "Encoder": Encoder,
+    "EncoderToLatents": EncoderToLatents2,
+    "LatentsToLatents": LatentsToLatents2,
+    "LatentsToDecoder": LatentsToDecoder,
+    "Decoder": Decoder
+}
+
+CIFAR10_64_4_R_LTL_2 = RNN(
+    architecture=ARCHITECTURE_CIFAR10_64_4_R_LTL_2,
+    num_latents=NUM_LATENTS,
+    num_latents_group=NUM_LATENTS_GROUP,
+    reconstruction=True,
+    encoders=False,
+    to_latents="Latents2",
+    encoder_to_latents=True,
+    backprop=True,
+    resample=True,
+    type=TYPE,
+    size=SIZE,
+    channels=CHANNELS,
+    log_prob_fn=LOG_PROB_FN,
+    std=STD,
+    hidden_size=HIDDEN_SIZE,
+    clip=CLIP)
+
 ARCHITECTURE_CIFAR10_64_4_R_LTLC = {
     "Canvas": Canvas,
     "Encoder": Encoder,
@@ -224,14 +277,24 @@ experiments = [
         "trials": 1,
         "method": CIFAR10_64_4_R_EETL2,
         "graphs": ["ELBO", "ELBO_Z1", "R", "R_Z1", "KLD_Z_10_16", "KLD_Z_1", "KLD_Validation"]
-    },{
+    },
+    {
+        "name": "Reconstruction Encoder Encoder To Latents 2 (2)",
+        "abbreviation": "R EETL 2 (2)",
+        "identifier": "CIFAR10_64_4_R_EETL2_2",
+        "trials": 1,
+        "method": CIFAR10_64_4_R_EETL2_2,
+        "graphs": ["ELBO", "ELBO_Z1", "R", "R_Z1", "KLD_Z_10_16", "KLD_Z_1", "KLD_Validation"]
+    },
+    {
         "name": "Reconstruction Encoder Encoder To Latents 3",
         "abbreviation": "R EETL 3",
         "identifier": "CIFAR10_64_4_R_EETL3",
         "trials": 1,
         "method": CIFAR10_64_4_R_EETL3,
         "graphs": ["ELBO", "ELBO_Z1", "R", "R_Z1", "KLD_Z_10_16", "KLD_Z_1", "KLD_Validation"]
-    },{
+    },
+    {
         "name": "Reconstruction Encoder Encoder To Latents 4",
         "abbreviation": "R EETL 4",
         "identifier": "CIFAR10_64_4_R_EETL4",
@@ -253,6 +316,14 @@ experiments = [
         "identifier": "CIFAR10_64_4_R_LTL",
         "trials": 1,
         "method": CIFAR10_64_4_R_LTL,
+        "graphs": ["ELBO", "ELBO_Z1", "R", "R_Z1", "KLD_Z_10_16", "KLD_Z_1", "KLD_Validation"]
+    },
+    {
+        "name": "Reconstruction Latents To Latents 2",
+        "abbreviation": "R LTL 2",
+        "identifier": "CIFAR10_64_4_R_LTL_2",
+        "trials": 1,
+        "method": CIFAR10_64_4_R_LTL_2,
         "graphs": ["ELBO", "ELBO_Z1", "R", "R_Z1", "KLD_Z_10_16", "KLD_Z_1", "KLD_Validation"]
     },
     {
