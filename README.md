@@ -43,3 +43,15 @@ In practice, a VAE consists of an encoder that transforms an input $\mathbf{x}$ 
 ```
 
 In summary, VAEs provide a powerful tool for modeling complex high-dimensional data by learning a lower-dimensional representation that captures the salient features of the data.
+
+### Towards Conceptual Compression
+
+The paper "Towards Conceptual Compression" introduces Convolutional DRAW, a recurrent neural network (RNN) variational autoencoder (VAE) based on DRAW that generates images over a number of time steps using a canvas. The paper also introduces the notion of conceptual compression, the separation of high and low-level details, and argues that conceptual compression is the ultimate goal of lossy compression. The authors claim that the model can achieve better compression quality than JPEG.
+
+At training time, the encoder is given the input to reconstruct, the previous hidden state of the encoder and decoder, and the current reconstruction error. The encoder outputs the parameters of a number of latent variables, which are sampled and used alongside the previous hidden state of the decoder and reconstruction. The initial canvas and hidden states for the encoder and decoder are learnable parameters.
+
+The paper shows the reconstruction of a target image from the Omniglot and ImageNet datasets over multiple iterations. Impressively, in the ImageNet grid, most of the images are recognizable by iteration 6 because the high-level details are there. Moreover, the paper showcases image grids of different methods: JPEG, JPEG2000, and Convolutional DRAW at different levels of compression, and qualitatively Convolutional DRAW is a clear winner.
+
+However, the paper does not address the fact that the model runs over many iterations, making the comparison to VAE unfair, as it is not clear how well a VAE would perform given the same number of latent variables. The comparison to JPEG is also unfair as it does not consider the bits of the model itself (compared to the JPEG program), the runtime, and that the model will likely suffer big performance hits when compressing data that is unlike the ImageNet dataset.
+
+Lastly, it could be argued that by turning the encoder and decoders into RNNs, one of the most fundamental and useful features of VAEs is lost: that the latent variables themselves have meaning. This feature is important for data generation and knowledge representation and allows for controlled manipulation.
