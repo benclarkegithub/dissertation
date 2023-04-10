@@ -103,7 +103,7 @@ class Method(ABC):
     def get_hidden_size(self):
         return self.hidden_size
 
-    def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", KLD_multiple=False, mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05):
+    def ELBO(self, logits, x, *, log_prob_fn="CB", KLD_fn="N", KLD_multiple=False, mu=None, logvar=None, log_p=None, log_q=None, beta=1, std=0.05, return_="mean"):
         if log_prob_fn == "CB":
             log_prob = self.CB_log_prob_fn(logits, x)
         elif log_prob_fn == "N":
@@ -119,9 +119,19 @@ class Method(ABC):
 
         reconstruction_error = ((x - torch.sigmoid(logits)) ** 2).sum(dim=-1)
 
-        return (log_prob - (beta * KLD).sum(dim=-1)).mean(), reconstruction_error.mean(), KLD.sum(dim=-1).mean() if not KLD_multiple else KLD.mean(dim=0)
+        if return_ == "mean":
+            return (log_prob - (beta * KLD).sum(dim=-1)).mean(), \
+                   log_prob.mean(), \
+                   KLD.sum(dim=-1).mean() if not KLD_multiple else KLD.mean(dim=0), \
+                   reconstruction_error.mean()
+        elif return_ == "sum":
+            return (log_prob - (beta * KLD).sum(dim=-1)), \
+                   log_prob, \
+                   KLD.sum(dim=-1) if not KLD_multiple else KLD, \
+                   reconstruction_error
 
-    def CB_log_prob_fn(self, logits, x):
+    @staticmethod
+    def CB_log_prob_fn(logits, x):
         # The continuous Bernoulli: fixing a pervasive error in variational autoencoders, Loaiza-Ganem G and Cunningham
         # JP, NeurIPS 2019. https://arxiv.org/abs/1907.06845.
         CB = torch.distributions.ContinuousBernoulli(logits=logits)
@@ -129,22 +139,26 @@ class Method(ABC):
 
         return CB_log_prob
 
-    def N_log_prob_fn(self, logits, x, *, std=0.05):
+    @staticmethod
+    def N_log_prob_fn(logits, x, *, std=0.05):
         images = torch.sigmoid(logits)
         N = torch.distributions.Normal(images, std)
         N_log_prob = N.log_prob(x).sum(dim=-1)
 
         return N_log_prob
 
-    def MSE_fn(self, logits, x):
+    @staticmethod
+    def MSE_fn(logits, x):
         images = torch.sigmoid(logits)
         MSE = (images - x) ** 2
         MSE_sum = MSE.sum(dim=-1)
 
         return MSE_sum
 
-    def KLD_N_fn(self, mu, logvar):
+    @staticmethod
+    def KLD_N_fn(mu, logvar):
         return -0.5 * (1 + logvar - (mu ** 2) - logvar.exp())
 
-    def KLD_Custom_fn(self, log_p, log_q):
+    @staticmethod
+    def KLD_Custom_fn(log_p, log_q):
         return (log_q - log_p)

@@ -1,4 +1,5 @@
 import torch
+from torch.distributions import Normal
 import torch.optim as optim
 from torchinfo import summary
 
@@ -58,7 +59,9 @@ class RNN(Method):
                  beta=1,
                  std=0.05,
                  hidden_size=None,
-                 clip=None):
+                 clip=None,
+                 steps=False,
+                 steps_beta=1):
         super().__init__(
             num_latents=num_latents,
             type=type,
@@ -75,6 +78,8 @@ class RNN(Method):
         self.num_groups = num_latents // num_latents_group
         self.type = type
         self.clip = clip
+        self.steps = steps
+        self.steps_beta = steps_beta
 
         # Options
         self.reconstruction = reconstruction
@@ -135,6 +140,10 @@ class RNN(Method):
                 for _ in range(self.num_groups)
             ]
 
+        # Steps
+        if self.steps:
+            self.enc_to_steps = architecture["EncoderToLatents"](self.hidden_size, 1)
+
         # Latents to Latents
         self.lats_to_lats = None
         if self.to_latents == "Latents":
@@ -168,8 +177,11 @@ class RNN(Method):
     def train(self, epoch, i, data, *, get_grad=False, model=None):
         losses = []
         log_probs = []
+        log_probs_sum = []
         KLDs = []
-        grads = []
+        rec_errors = []
+        steps = None
+        grad = None
 
         # Get the input images
         images, _ = data
@@ -198,6 +210,14 @@ class RNN(Method):
                     logvar_images.append(logvar_images_1)
 
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
+
+        mu_steps = None
+        logvar_steps = None
+        std_steps = None
+        if self.steps:
+            mu_steps, logvar_steps = self.enc_to_steps(x_enc_images)
+            std_steps = torch.exp(0.5 * logvar_steps)
+            steps = mu_steps.detach().flatten()
 
         outputs = None
         if self.reconstruction:
@@ -312,23 +332,70 @@ class RNN(Method):
                 outputs.append(logits_reshaped.detach())
 
             # Loss, backward
-            loss, log_prob, KLD = self.ELBO(
-                logits,
-                images.view(-1, self.channels * (self.size ** 2)),
-                log_prob_fn=self.log_prob_fn,
-                KLD_fn="N",
-                mu=mu,
-                logvar=logvar,
-                beta=self.beta,
-                std=self.std)
+            if not self.steps:
+                loss, log_prob, KLD, rec_error = self.ELBO(
+                    logits,
+                    images.view(-1, self.channels * (self.size ** 2)),
+                    log_prob_fn=self.log_prob_fn,
+                    KLD_fn="N",
+                    mu=mu,
+                    logvar=logvar,
+                    beta=self.beta,
+                    std=self.std,
+                    return_="mean")
+
+                # Keep track of losses, log probs, and KLDs
+                losses.append(-loss.detach())
+                log_probs.append(log_prob.detach())
+                KLDs.append(KLD.detach())
+                rec_errors.append(rec_error.detach())
+            else:
+                loss_2, log_prob_2, KLD_2, rec_error_2 = self.ELBO(
+                    logits,
+                    images.view(-1, self.channels * (self.size ** 2)),
+                    log_prob_fn=self.log_prob_fn,
+                    KLD_fn="N",
+                    mu=mu,
+                    logvar=logvar,
+                    beta=self.beta,
+                    std=self.std,
+                    return_="sum")
+
+                loss = loss_2.mean()
+                log_prob = log_prob_2.mean()
+                log_probs_sum.append(log_prob_2.detach())
+                KLD = KLD_2.mean()
+                rec_error = rec_error_2.mean()
+
+                # Keep track of losses, log probs, and KLDs
+                losses.append(-loss.detach())
+                log_probs.append(log_prob.detach())
+                KLDs.append(KLD.detach())
+                rec_errors.append(rec_error.detach())
+
+                if group == (self.num_groups - 1):
+                    normal = Normal(mu_steps, std_steps)
+                    step_loss_1 = 0
+
+                    for group in range(self.num_groups):
+                        group = torch.tensor(group)
+                        if group == 0:
+                            step_prob = normal.cdf(group + 0.5)
+                        elif group == (self.num_groups - 1):
+                            step_prob = 1 - normal.cdf(group - 0.5)
+                        else:
+                            step_prob = normal.cdf(group + 0.5) - normal.cdf(group - 0.5)
+
+                        step_loss_1 = step_loss_1 + (step_prob * log_probs_sum[group])
+
+                    # Because the loss is multiplied by -1 below, step_loss will be maximised
+                    step_loss_2 = -Method.KLD_N_fn(mu_steps, logvar_steps)
+                    step_loss = (step_loss_1 + (self.steps_beta * step_loss_2)).mean()
+                    loss = loss + step_loss
+
             # Because optimisers minimise, and we want to maximise the ELBO, we multiply it by -1
             loss = -loss
             loss.backward(retain_graph=True)
-
-            # Keep track of losses, log probs, and KLDs
-            losses.append(loss.detach())
-            log_probs.append(log_prob.detach())
-            KLDs.append(KLD.detach())
 
         # Clip the gradients
         if self.clip is not None:
@@ -342,7 +409,7 @@ class RNN(Method):
                 if param.grad is not None:
                     grad_temp.append(param.grad.flatten())
 
-            grads.append(torch.linalg.norm(torch.cat(grad_temp)))
+            grad = torch.linalg.norm(torch.cat(grad_temp))
 
         # Step
         self.optimiser_model.step()
@@ -353,9 +420,9 @@ class RNN(Method):
         KLDs = [KLDs[j] - KLDs_temp[j] for j in range(len(KLDs))]
 
         if self.type == "Single":
-            return losses, log_probs, KLDs, grads
+            return losses, log_probs, KLDs, rec_errors, steps, grad
         else:
-            return [losses[-1]], [log_probs[-1]], [KLDs[-1]], grads
+            return [losses[-1]], [log_probs[-1]], [KLDs[-1]], [rec_errors[-1]], steps, grad
 
     @torch.no_grad()
     def test(self, i, data, *, model=None):
@@ -383,6 +450,11 @@ class RNN(Method):
                     logvar_images.append(logvar_images_1)
 
                 mu_images, logvar_images = torch.cat(mu_images, dim=1), torch.cat(logvar_images, dim=1)
+
+        steps = None
+        if self.steps:
+            mu_steps, logvar_steps = self.enc_to_steps(x_enc_images)
+            steps = mu_steps.detach().flatten()
 
         outputs = None
         if self.reconstruction:
@@ -498,7 +570,7 @@ class RNN(Method):
         }
 
         # Calculate loss
-        loss, log_prob, KLD = self.ELBO(
+        loss, log_prob, KLD, rec_error = self.ELBO(
             logits_output,
             images.view(-1, self.channels * (self.size ** 2)),
             log_prob_fn=self.log_prob_fn,
@@ -508,7 +580,7 @@ class RNN(Method):
             beta=self.beta,
             std=self.std)
 
-        return output, [-loss.item()], [log_prob.item()], [KLD.item()]
+        return output, [-loss.item()], [log_prob.item()], [KLD.item()], [rec_error.item()], steps
 
     def save(self, path):
         torch.save(self.model.state_dict(), f"{path}.pth")

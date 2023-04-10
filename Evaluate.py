@@ -58,23 +58,35 @@ class Evaluate:
             avg_train_loss = [[] for _ in range(models)]
             avg_train_log_prob = [[] for _ in range(models)]
             avg_train_KLD = [[] for _ in range(models)]
+            avg_train_rec_error = [[] for _ in range(models)]
+            avg_train_steps = [[] for _ in range(models)]
+            std_train_steps = [[] for _ in range(models)]
             grad = [[] for _ in range(models)]
             avg_val_loss = [[] for _ in range(models)]
             avg_val_log_prob = [[] for _ in range(models)]
             avg_val_KLD = [[] for _ in range(models)]
+            avg_val_rec_error = [[] for _ in range(models)]
+            avg_val_steps = [[] for _ in range(models)]
+            std_val_steps = [[] for _ in range(models)]
             best_avg_val_epoch = [1 for _ in range(models)]
             best_avg_val_loss = [np.inf for _ in range(models)]
             current_model = 0
-            current_epoch =  0
+            current_epoch = 0
             epoch_time = [[] for _ in range(models)]
         else:
             avg_train_loss = training_progress["avg_train_loss"]
             avg_train_log_prob = training_progress["avg_train_log_prob"]
             avg_train_KLD = training_progress["avg_train_KLD"]
+            avg_train_rec_error = training_progress["avg_train_rec_error"]
+            avg_train_steps = training_progress["avg_train_steps"]
+            std_train_steps = training_progress["std_train_steps"]
             grad = training_progress["grad"]
             avg_val_loss = training_progress["avg_val_loss"]
             avg_val_log_prob = training_progress["avg_val_log_prob"]
             avg_val_KLD = training_progress["avg_val_KLD"]
+            avg_val_rec_error = training_progress["avg_val_rec_error"]
+            avg_val_steps = training_progress["avg_val_steps"]
+            std_val_steps = training_progress["std_val_steps"]
             best_avg_val_epoch = training_progress["best_avg_val_epoch"]
             best_avg_val_loss = training_progress["best_avg_val_loss"]
             current_model = training_progress["current_model"]
@@ -90,6 +102,8 @@ class Evaluate:
                 avg_train_loss_2 = []
                 avg_train_log_prob_2 = []
                 avg_train_KLD_2 = []
+                avg_train_rec_error_2 = []
+                avg_train_steps_2 = []
                 grad_2 = []
 
                 # Keep track of the training time
@@ -98,15 +112,19 @@ class Evaluate:
                 for i, data in enumerate(train_loader):
                     # If the method has multiple models, pass the model number
                     if self.method.get_type() == "Single":
-                        losses, log_probs, KLDs, grads = self.method.train(epoch=epoch, i=i, data=data, get_grad=get_grad)
+                        losses, log_probs, KLDs, rec_error, steps, grad_3 = self.method.train(
+                            epoch=epoch, i=i, data=data, get_grad=get_grad)
                     else:
-                        losses, log_probs, KLDs, grads = self.method.train(
+                        losses, log_probs, KLDs, rec_error, steps, grad_3 = self.method.train(
                             epoch=epoch, i=i, data=data, get_grad=get_grad, model=model)
                     avg_train_loss_2.append(losses)
                     avg_train_log_prob_2.append(log_probs)
                     avg_train_KLD_2.append(KLDs)
-                    if get_grad:
-                        grad_2.append(grads)
+                    avg_train_rec_error_2.append(rec_error)
+                    if steps is not None:
+                        avg_train_steps_2.append(steps)
+                    if grad_3 is not None:
+                        grad_2.append(grad_3)
 
                 # Keep track of the training time
                 end = time.time()
@@ -115,30 +133,47 @@ class Evaluate:
                 avg_train_loss[model].append(np.array(avg_train_loss_2).mean(axis=0))
                 avg_train_log_prob[model].append(np.array(avg_train_log_prob_2).mean(axis=0))
                 avg_train_KLD[model].append(np.array(avg_train_KLD_2).mean(axis=0))
-                if get_grad:
+                avg_train_rec_error[model].append(np.array(avg_train_rec_error_2).mean(axis=0))
+                if len(avg_train_steps_2) > 0:
+                    avg_train_steps[model].append(torch.cat(avg_train_steps_2).mean())
+                    std_train_steps[model].append(torch.cat(avg_train_steps_2).std())
+                if len(grad_2) > 0:
                     grad[model].append(np.array(grad_2).mean(axis=0))
 
                 # Get the trained model's average validation loss
                 avg_val_loss_2 = []
                 avg_val_log_prob_2 = []
                 avg_val_KLD_2 = []
+                avg_val_rec_error_2 = []
+                avg_val_steps_2 = []
 
                 for i, data in enumerate(val_loader):
                     # If the method has multiple models pass the model number
                     if self.method.get_type() == "Single":
-                        output, losses, log_probs, KLDs = self.method.test(i=i, data=data)
+                        output, losses, log_probs, KLDs, rec_error, steps = self.method.test(i=i, data=data)
                     else:
-                        output, losses, log_probs, KLDs = self.method.test(i=i, data=data, model=model)
+                        output, losses, log_probs, KLDs, rec_error, steps = self.method.test(i=i, data=data, model=model)
                     avg_val_loss_2.append(losses)
                     avg_val_log_prob_2.append(log_probs)
                     avg_val_KLD_2.append(KLDs)
+                    avg_val_rec_error_2.append(rec_error)
+                    if steps is not None:
+                        avg_val_steps_2.append(steps)
 
                 avg_val_loss[model].append(np.array(avg_val_loss_2).mean(axis=0))
                 avg_val_log_prob[model].append(np.array(avg_val_log_prob_2).mean(axis=0))
                 avg_val_KLD[model].append(np.array(avg_val_KLD_2).mean(axis=0))
+                avg_val_rec_error[model].append(np.array(avg_val_rec_error_2).mean(axis=0))
+                if len(avg_val_steps_2) > 0:
+                    avg_val_steps[model].append(torch.cat(avg_val_steps_2).mean())
+                    std_val_steps[model].append(torch.cat(avg_val_steps_2).std())
 
                 # Log epoch information
-                grad_param = grad[model][-1] if get_grad else None
+                avg_train_steps_param = avg_train_steps[model][-1] if len(avg_train_steps[model]) > 0 else None
+                std_train_steps_param = std_train_steps[model][-1] if len(std_train_steps[model]) > 0 else None
+                avg_val_steps_param = avg_val_steps[model][-1] if len(avg_val_steps[model]) > 0 else None
+                std_val_steps_param = std_val_steps[model][-1] if len(std_val_steps[model]) > 0 else None
+                grad_param = grad[model][-1] if len(grad[model]) > 0 else None
                 self.log_epoch(
                     epoch=epoch,
                     epoch_time=epoch_time[model][-1],
@@ -148,6 +183,12 @@ class Evaluate:
                     avg_val_log_probs=avg_val_log_prob[model][-1],
                     avg_train_KLDs=avg_train_KLD[model][-1],
                     avg_val_KLDs=avg_val_KLD[model][-1],
+                    avg_train_rec_error=avg_train_rec_error[model][-1],
+                    avg_val_rec_error=avg_val_rec_error[model][-1],
+                    avg_train_steps=avg_train_steps_param,
+                    std_train_steps=std_train_steps_param,
+                    avg_val_steps=avg_val_steps_param,
+                    std_val_steps=std_val_steps_param,
                     grad=grad_param)
 
                 # Reset current_epoch if it's the last epoch
@@ -159,10 +200,16 @@ class Evaluate:
                 self.save_training(avg_train_loss=avg_train_loss,
                                    avg_train_log_prob=avg_train_log_prob,
                                    avg_train_KLD=avg_train_KLD,
+                                   avg_train_rec_error=avg_train_rec_error,
+                                   avg_train_steps=avg_train_steps,
+                                   std_train_steps=std_train_steps,
                                    grad=grad,
                                    avg_val_loss=avg_val_loss,
                                    avg_val_log_prob=avg_val_log_prob,
                                    avg_val_KLD=avg_val_KLD,
+                                   avg_val_rec_error=avg_val_rec_error,
+                                   avg_val_steps=avg_val_steps,
+                                   std_val_steps=std_val_steps,
                                    best_avg_val_epoch=best_avg_val_epoch,
                                    best_avg_val_loss=best_avg_val_loss,
                                    current_model=model,
@@ -235,7 +282,7 @@ class Evaluate:
         z = None
 
         for i, data in enumerate(test_loader):
-            output, loss, log_prob, KLD = self.method.test(i=i, data=data)
+            output, loss, log_prob, KLD, rec_error, steps = self.method.test(i=i, data=data)
 
             if (i == 0):
                 if mu_var:
@@ -317,7 +364,7 @@ class Evaluate:
             images = images[:number].reshape(number, channels, size, size)
 
         # Get the output
-        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+        output, loss, log_prob, KLD, rec_error, steps = self.method.test(i=0, data=data)
 
         if z == "mu":
             mu = output["mu"]
@@ -370,7 +417,7 @@ class Evaluate:
         data = next(iter(test_loader))
 
         # Get the output
-        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+        output, loss, log_prob, KLD, rec_error, steps = self.method.test(i=0, data=data)
 
         # Output images for every pair of latent variables, i.e. (z1, z2), (z3, z4), ...
         for z_i in np.arange(0, self.method.get_num_latents() - 1, 2):
@@ -443,7 +490,7 @@ class Evaluate:
             images = images[:number].reshape(number, channels, size, size)
 
         # Get the output
-        output, loss, log_prob, KLD = self.method.test(i=0, data=data)
+        output, loss, log_prob, KLD, rec_error, steps = self.method.test(i=0, data=data)
         z_temp = output["mu"] if (z == "mu") else output["z"]
 
         def get_images_from_order(images, order):
@@ -576,9 +623,15 @@ class Evaluate:
                       avg_train_loss,
                       avg_train_log_prob,
                       avg_train_KLD,
+                      avg_train_rec_error,
+                      avg_train_steps,
+                      std_train_steps,
                       avg_val_loss,
                       avg_val_log_prob,
                       avg_val_KLD,
+                      avg_val_rec_error,
+                      avg_val_steps,
+                      std_val_steps,
                       best_avg_val_epoch,
                       best_avg_val_loss,
                       current_model,
@@ -590,15 +643,21 @@ class Evaluate:
             "avg_train_loss": avg_train_loss,
             "avg_train_log_prob": avg_train_log_prob,
             "avg_train_KLD": avg_train_KLD,
+            "avg_train_rec_error": avg_train_rec_error,
+            "avg_train_steps": avg_train_steps,
+            "std_train_steps": std_train_steps,
             "grad": grad,
             "avg_val_loss": avg_val_loss,
             "avg_val_log_prob": avg_val_log_prob,
             "avg_val_KLD": avg_val_KLD,
+            "avg_val_rec_error": avg_val_rec_error,
+            "avg_val_steps": avg_val_steps,
+            "std_val_steps": std_val_steps,
             "best_avg_val_epoch": best_avg_val_epoch,
             "best_avg_val_loss": best_avg_val_loss,
             "current_model": current_model,
             "current_epoch": current_epoch,
-            "epoch_time": epoch_time,
+            "epoch_time": epoch_time
         }
 
         with open(f"{self.path}/Training.pkl", "wb") as file:
@@ -634,17 +693,28 @@ class Evaluate:
                   avg_val_log_probs,
                   avg_train_KLDs,
                   avg_val_KLDs,
+                  avg_train_rec_error,
+                  avg_val_rec_error,
+                  avg_train_steps,
+                  std_train_steps,
+                  avg_val_steps,
+                  std_val_steps,
                   grad):
         message = f"[Epoch {epoch:3} ({epoch_time:.2f}s)]\t" \
                   f"ELBO (bits/dim): {', '.join([f'{-x / self.denominator_bits:.5f}' for x in avg_train_losses])}" \
                   f" ({', '.join([f'{-x / self.denominator_bits:.5f}' for x in avg_val_losses])})\t" \
-                  f"Reconstruction error (/dim): {', '.join([f'{x / self.denominator:.5f}' for x in avg_train_log_probs])}" \
+                  f"Log error (/dim): {', '.join([f'{x / self.denominator:.5f}' for x in avg_train_log_probs])}" \
                   f" ({', '.join([f'{x / self.denominator:.5f}' for x in avg_val_log_probs])})\t" \
                   f"KLD: {', '.join([f'{x:.3f}' for x in avg_train_KLDs])}" \
-                  f" ({', '.join([f'{x:.3f}' for x in avg_val_KLDs])})"
+                  f" ({', '.join([f'{x:.3f}' for x in avg_val_KLDs])})\t" \
+                  f"Rec error (/dim): {', '.join([f'{x / self.denominator:.5f}' for x in avg_train_rec_error])}\t" \
+                  f" ({', '.join([f'{x / self.denominator:.5f}' for x in avg_val_rec_error])})"
+
+        if avg_train_steps is not None:
+            message += f"\tSteps: {avg_train_steps:.3f} ± {std_train_steps:.3f} ({avg_val_steps:.3f} ± {std_val_steps:.3f})"
 
         if grad is not None:
-            message += f"\tGrad: {', '.join([f'{x:.1f}' for x in grad])}"
+            message += f"\tGrad: {grad:.1f}"
 
         # Log message
         self.write_log(message)
@@ -800,17 +870,16 @@ class Evaluate:
         plt.show(dpi=300)
 
     def plot_grad(self, grad):
-        grad = [np.stack(x) for x in grad]
-
         models = len(grad)
 
         for model in range(models):
-            epochs, train_groups = grad[model].shape
+            epochs = len(grad[model])
             X = np.arange(1, epochs + 1)
-
-            for g_i in range(train_groups):
-                grad_label = f"Z{g_i + 1}" if models == 1 else f"Model {model + 1} Z{g_i + 1}"
-                plt.plot(X, grad[model][:, g_i], label=grad_label)
+            if models == 1:
+                plt.plot(X, grad[model])
+            else:
+                grad_label = f"Model {model + 1}"
+                plt.plot(X, grad[model], label=grad_label)
 
         plt.title(f"{type(self.method).__name__} {self.experiment} average gradient norm")
         plt.xlabel("Epoch")
