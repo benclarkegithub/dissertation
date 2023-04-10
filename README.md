@@ -65,3 +65,24 @@ A second closely related work to our proposed method is the Principal Component 
 PCA-AE trains an encoder and decoder with a single latent variable on the dataset to convergence, then discards the decoder and freezes the first encoder's parameters. Then, a second encoder and a new decoder are introduced, although this time the decoder receives the concatenation of the latent variables from the first and second encoder. This process is repeated, and a covariance loss term is introduced to satisfy the statistically independent constraint.
 
 PCA-AE is demonstrated on various tasks, including leveraging a pre-trained GAN to change particular attributes of celebrity photos and generating images of celebrities. However, the authors do not include the number of parameters in each model, an essential metric. Additionally, while the authors claim to give the reconstruction the highest degree of freedom possible by discarding the decoder at each time step, it is not clear whether this approach is more effective than continuing to train the same decoder. The major drawback of this method is the fact that an encoder is needed for each latent variable.
+
+### Summary & Contribution
+
+To summarise, Towards Conceptual Compression introduces Convolutional DRAW, an RNN VAE that generates images over a flexible number of time steps. However, by using an RNN architecture, the latent representations lose meaning as the generation is dependent on the latent representations and previous hidden states. Moreover, generating images has a complexity of O(t). On the other hand, Principal Component Analysis Autoencoder introduces PCA-AE, an autoencoder method inspired by PCA. PCA-AE has meaningful latent representations, but requires multiple encoders to do so. Furthermore, PCA-AE does not support a flexible number of time steps. At generation, the decoder must receive the number of latent variables it was trained with.
+
+This project's aim is to get the best of both worlds, under the assumption that the following features are desirable in a model:
+
+High and low-level, or coarse-to-fine features of the data are naturally separated.
+The latent representations are meaningful.
+Generation is possible with an arbitrary number of latent representations (although not an arbitrary order).
+Only a single encoder and decoder are necessary.
+Generation takes O(1) time.
+Following from this, there are two main contributions of this project. Firstly, a novel Modular VAE architecture has been developed that allows for 2, 3, 4, and 5. Secondly, multiple methods have been developed that achieve 1 and 2, utilizing the Modular VAE architecture. A summary table of Convolutional DRAW, PCA-AE, and the methods developed in this thesis can be found below:
+
+|   | Convolutional DRAW | PCA-AE | This work |
+| - | ------------------ | ------ | --------- |
+| High and low-level | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Meaningful latent representations | :x: | :heavy_check_mark: | :heavy_check_mark: |
+| Flexible number of latents | :heavy_check_mark: | :x: | :heavy_check_mark: |
+| Single encoder and decoder | :heavy_check_mark: | :x: | :heavy_check_mark: |
+| O(1) generation |	:x: | :heavy_check_mark: | :heavy_check_mark: |
