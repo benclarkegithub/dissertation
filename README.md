@@ -48,7 +48,9 @@ In summary, VAEs provide a powerful tool for modeling complex high-dimensional d
 
 The paper "Towards Conceptual Compression" introduces Convolutional DRAW, a recurrent neural network (RNN) variational autoencoder (VAE) based on DRAW that generates images over a number of time steps using a canvas. The paper also introduces the notion of conceptual compression, the separation of high and low-level details, and argues that conceptual compression is the ultimate goal of lossy compression. The authors claim that the model can achieve better compression quality than JPEG.
 
-At training time, the encoder is given the input to reconstruct, the previous hidden state of the encoder and decoder, and the current reconstruction error. The encoder outputs the parameters of a number of latent variables, which are sampled and used alongside the previous hidden state of the decoder and reconstruction. The initial canvas and hidden states for the encoder and decoder are learnable parameters.
+At training time, the encoder is given the input to reconstruct, the previous hidden state of the encoder and decoder, and the current reconstruction error. The encoder outputs the parameters of a number of latent variables, which are sampled and used alongside the previous hidden state of the decoder and reconstruction. The initial canvas and hidden states for the encoder and decoder are learnable parameters. A high-level diagram of the model can be found below.
+
+![Towards Conceptual Compression model](https://github.com/benclarkegithub/dissertation/blob/master/Images/Towards%20Conceptual%20Compression.drawio.png)
 
 The paper shows the reconstruction of a target image from the Omniglot and ImageNet datasets over multiple iterations. Impressively, in the ImageNet grid, most of the images are recognizable by iteration 6 because the high-level details are there. Moreover, the paper showcases image grids of different methods: JPEG, JPEG2000, and Convolutional DRAW at different levels of compression, and qualitatively Convolutional DRAW is a clear winner.
 
