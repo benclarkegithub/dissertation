@@ -87,3 +87,17 @@ Following from this, there are two main contributions of this project. Firstly, 
 | Flexible number of latents | :heavy_check_mark: | :x: | :heavy_check_mark: |
 | Single encoder and decoder | :heavy_check_mark: | :x: | :heavy_check_mark: |
 | O(1) generation |	:x: | :heavy_check_mark: | :heavy_check_mark: |
+
+## Method
+
+### Framework
+
+The methods investigated in this project can be explained at a high-level in terms of a diagram, pictured below.
+Here, $\mathbf{x}$ is the data point to be reconstructed, $\mathbf{r}_t$ and $\mathbf{z}_t$ are the reconstruction and latent variable group at time step $t$, respectively, and $T$ is the maximum number of time steps of the model.
+The latent variable groups can have one or more latent variables defined by $\dim(\mathbf{z})$, and all have the same number of latent variables.
+Both $\dim(\mathbf{z})$ and $T$ are design choices.
+Notably, the total number of latent variables in the model is $\dim(\mathbf{z}) * T$.
+
+![Coarse-to-fine perceptual decomposition framework](https://github.com/benclarkegithub/dissertation/blob/master/Images/c2f-rec2.png)
+
+*The high-level coarse-to-fine framework this work considers. Image taken from https://www.robots.ox.ac.uk/~nsid/notes/c2f-vae.html. Note: "l" and "L" in the diagram are equivalent to "t" and "T".*
