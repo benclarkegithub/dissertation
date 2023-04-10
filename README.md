@@ -101,3 +101,36 @@ Notably, the total number of latent variables in the model is $\dim(\mathbf{z}) 
 ![Coarse-to-fine perceptual decomposition framework](https://github.com/benclarkegithub/dissertation/blob/master/Images/c2f-rec2.png)
 
 *The high-level coarse-to-fine framework this work considers. Image taken from https://www.robots.ox.ac.uk/~nsid/notes/c2f-vae.html. Note: "l" and "L" in the diagram are equivalent to "t" and "T".*
+
+### Modular VAE
+
+Translating the framework into a VAE is problematic.
+The first problem arises in the encoder that takes $\mathbf{r}_ t$ and $\mathbf{x}$ as input and outputs the parameters of the distribution $\mathbf{z}_ t$.
+Inputting $\mathbf{r}_ {t-1}$ and $\mathbf{x}$ could be achieved by increasing the input size of the encoder, however, their inputs would be combined and the parameters that encode $\mathbf{r}_ {t-1}$ and $\mathbf{x}$ would be different, both of which are undesired qualities.
+Moreover, encoders have a fixed number of latent variables, meaning that at every time step the parameters for $\mathbf{z}_ {t+1}, ..., \mathbf{z}_ T$ would be calculated unnecessarily.
+The second problem arises in the decoder, which also has a fixed number of latent variables.
+Although in this case the problem is much worse, a separate decoder would be needed for each time step.
+This is not only inefficient but undesired as the output $\mathbf{r}$ will be different for the same $\mathbf{z}$.
+The equations for the Standard VAE architecture can be found below:
+
+```math
+\displaylines{\mu, \log(\sigma^2) = \text{Encoder}_\phi(\mathbf{x})\\
+\mathbf{z} = \mu + \sigma \odot \epsilon,\ \epsilon \sim \mathcal{N}(\mathbf{0}, \mathbb{I})\\
+\mathbf{r} = \text{Decoder}_\theta(\mathbf{z})}
+```
+
+In order to have the desired qualities and circumvent the issues of the VAE, a modular VAE architecture was developed for the project.
+Whereas a standard VAE has two components, an encoder and a decoder, the modular VAE has four components: an encoder, a component called $\text{EncoderToLatents}$, a component called $\text{LatentsToDecoder}$, and a decoder.
+Please see the equations and diagram below for the modular VAE architecture:
+
+```math
+\displaylines{x_{enc} = \text{Encoder}_\phi(x)\\
+\mu_t, \log(\sigma^2_t) = \text{EncoderToLatents}_{\psi_t}(x_{enc})\\
+z_t = \mu_t + \sigma_t \odot \epsilon,\ \epsilon \sim \mathcal{N}(0, \mathbb{I})\\
+z_{dec} = \sum_{i=1}^t \text{LatentsToDecoder}_{\omega_i}(z_i)\\
+r = \text{Decoder}_\theta(z_{dec})}
+```
+
+![Coarse-to-fine perceptual decomposition framework](https://github.com/benclarkegithub/dissertation/blob/master/Images/Modular%20VAE.drawio.png)
+
+*A diagram of the Modular VAE architecture.*
