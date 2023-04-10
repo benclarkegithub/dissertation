@@ -132,3 +132,28 @@ r = \text{Decoder}_\theta(z_{dec})}
 ![Coarse-to-fine perceptual decomposition framework](https://github.com/benclarkegithub/dissertation/blob/master/Images/Modular%20VAE.drawio.png)
 
 *A diagram of the Modular VAE architecture.*
+
+### Variable Number of Steps
+
+A desireable feature of a coarse-to-fine perceptual decomposition model is that it has the ability predict the number of steps $t$ the model should iterate to reconstruct the target image.
+Within the modular VAE framework an additional $\text{EncoderToLatents}$ component can be introduced to parameterise this.
+E.g., for a Gaussian distribution where $\mu_s$ and $\log(\sigma^2_s)$ denote the distribution of the number of steps for a target image:
+```math
+\mu_s, \log(\sigma^2_s) = \text{EncoderToLatents}_{\psi_s}(x_{enc})
+```
+
+Then, training the component can be achieved by adding a new term to the loss*:
+```math
+    \mathcal{L}_s (\theta, \phi, \theta_s, \phi_s; \mathbf{x}) = \sum_{i=1}^t (\Phi(\frac{(i-0.5)-\mu_s}{\sigma_s}) - \Phi(\frac{(i-1.5)-\mu_s}{\sigma_s}))\mathbb{E}_{q_\phi(\mathbf{z_1, ..., z_i} \mid \mathbf{x})}[\log p_\theta(\mathbf{x} \mid \mathbf{z_1, ..., z_i})] - D_{KL}(q_{\phi_s}(s \mid \mathbf{x}) \mid\mid p_{\theta_s}(s))
+```
+
+\* Note: the new term does not apply to the edge cases $i=1$ or $i=t$.
+
+Where the parameters subscripted by $s$ relate to the number of steps, $\Phi(x)$ is the CDF of the standard Gaussian distribution at $x$, and $p_{\theta_s}(s)$ is typically $\mathcal{N}(s; 0, 1)$, although it is a design choice.
+Moreover, a beta term $\beta_s$ can be added to the KL Divergence to increase/decrease the strength of the regularisation.
+This new term is then added to the ELBO:
+```math
+    \mathcal{L} (\theta, \phi; \mathbf{x}) = \mathbb{E}_{q_\phi(\mathbf{z} \mid \mathbf{x})}[\log p_\theta(\mathbf{x} \mid \mathbf{z})] - D_{KL}(q_\phi(\mathbf{z} \mid \mathbf{x}) \mid\mid p_\theta(\mathbf{z})) + \mathcal{L}_s (\theta, \phi, \theta_s, \phi_s; \mathbf{x})
+```
+
+In practice, PyTorch's implementation is used for the CDF to allow for gradient decent, and the expectation term is detached from the graph.
