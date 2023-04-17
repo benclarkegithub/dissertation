@@ -147,7 +147,7 @@ Then, training the component can be achieved by adding a new term to the loss:
     \displaylines{\mathcal{L}_s (\theta, \phi, \theta_s, \phi_s, \psi_s; \mathbf{x}) = \sum_{i=1}^t P_s(\psi_s; \mu_s, \sigma_s) \mathbb{E}_{q_\phi(\mathbf{z_1, ..., z_i} \mid \mathbf{x})}[\log p_\theta(\mathbf{x} \mid \mathbf{z_1, ..., z_i})] - D_{KL}(q_{\phi_s}(s \mid \mathbf{x}) \mid\mid p_{\theta_s}(s))\\
     P_s(\psi_s; \mu_s, \sigma_s) =
     \begin{cases}
-      \Phi(\frac{(1.5)-\mu_s}{\sigma_s}) & \text{if 1 $i$ = 1}\\
+      \Phi(\frac{(1.5)-\mu_s}{\sigma_s}) & \text{if $i$ = 1}\\
       \Phi(\frac{(i+0.5)-\mu_s}{\sigma_s}) - \Phi(\frac{(i-0.5)-\mu_s}{\sigma_s}) & \text{if 1 < $i$ < t}\\
       1 - \Phi(\frac{(t-0.5)-\mu_s}{\sigma_s}) & \text{if $i$ = t}
     \end{cases}
